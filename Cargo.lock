@@ -424,14 +424,14 @@ dependencies = [
 [[package]]
 name = "ferogram-connect"
 version = "0.6.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "54211f9669f8bb7db8101d952514784311a1e135c01eb04d8732d465cdb2aa73"
 dependencies = [
  "ferogram-crypto",
  "ferogram-mtproto",
  "ferogram-tl-types",
  "flate2",
+ "hmac",
  "log",
+ "sha2",
  "socket2 0.5.10",
  "tokio",
  "tokio-socks",
@@ -473,8 +473,6 @@ dependencies = [
 [[package]]
 name = "ferogram-mtsender"
 version = "0.6.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4fb2d34f025b0c6369d42f08317e3ded5bb8aa83bdec48fd443a4cc26fa4c9cf"
 dependencies = [
  "ferogram-connect",
  "ferogram-crypto",
