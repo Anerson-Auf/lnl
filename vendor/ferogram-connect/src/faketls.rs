@@ -342,3 +342,29 @@ pub async fn read_app_data(stream: &mut TcpStream) -> Result<Vec<u8>, ConnectErr
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn client_hello_is_padded_and_hmac_shaped() {
+        let domain = "example.com";
+        let session = [7u8; 32];
+        let zero = [0u8; 32];
+        let mut hello = build_client_hello(domain, &zero, &session);
+        assert!(hello.len() >= 517, "len={}", hello.len());
+        assert_eq!(&hello[0..3], &[0x16, 0x03, 0x01]);
+        assert_eq!(&hello[DIGEST_POS..DIGEST_POS + DIGEST_LEN], &[0u8; 32]);
+
+        let secret = [1u8; 16];
+        let mut digest = hmac_sha256(&secret, &hello);
+        let ts: u32 = 1_700_000_000;
+        let tb = ts.to_le_bytes();
+        for i in 0..4 {
+            digest[28 + i] ^= tb[i];
+        }
+        hello[DIGEST_POS..DIGEST_POS + DIGEST_LEN].copy_from_slice(&digest);
+        assert_ne!(&hello[DIGEST_POS..DIGEST_POS + 28], &[0u8; 28]);
+    }
+}

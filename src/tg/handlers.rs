@@ -40,12 +40,12 @@ pub async fn handle_update(state: Arc<AppState>, update: Update) {
         }
     }
 
-    println!(
-        "{} {}: {}",
-        if message.outgoing { "→" } else { "←" },
-        peer_id,
-        message.text
-    );
+    // println!(
+    //     "{} {}: {}",
+    //     if message.outgoing { "→" } else { "←" },
+    //     peer_id,
+    //     message.text
+    // );
 
     let _ = state.events.send(WsEvent::NewMessage { peer_id, message });
 }
