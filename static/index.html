@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>LNL</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --panel: #1a222c;
+      --line: #2a3542;
+      --text: #e7ecf1;
+      --muted: #8b9aab;
+      --accent: #3d8bfd;
+      --out: #1e3a2f;
+      --in: #243041;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      display: grid;
+      grid-template-columns: minmax(220px, 320px) 1fr;
+    }
+    @media (max-width: 720px) {
+      body { grid-template-columns: 1fr; }
+      body.chat-open .sidebar { display: none; }
+      body:not(.chat-open) .chat { display: none; }
+    }
+    .sidebar, .chat {
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      height: 100%;
+    }
+    .sidebar { border-right: 1px solid var(--line); background: var(--panel); }
+    header {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--line);
+      font-weight: 650;
+      letter-spacing: 0.02em;
+    }
+    #chats {
+      overflow: auto;
+      flex: 1;
+    }
+    .chat-item {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--line);
+      cursor: pointer;
+    }
+    .chat-item:hover, .chat-item.active { background: #223040; }
+    .chat-item .title { font-weight: 600; }
+    .chat-item .preview {
+      color: var(--muted);
+      font-size: 0.85rem;
+      margin-top: 4px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .chat-top {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--line);
+      background: var(--panel);
+    }
+    .back {
+      display: none;
+      background: transparent;
+      border: 1px solid var(--line);
+      color: var(--text);
+      border-radius: 8px;
+      padding: 6px 10px;
+      cursor: pointer;
+    }
+    @media (max-width: 720px) { .back { display: inline-block; } }
+    #messages {
+      flex: 1;
+      overflow: auto;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .bubble {
+      max-width: min(720px, 85%);
+      padding: 10px 12px;
+      border-radius: 12px;
+      white-space: pre-wrap;
+      word-break: break-word;
+      line-height: 1.35;
+    }
+    .bubble.in { align-self: flex-start; background: var(--in); }
+    .bubble.out { align-self: flex-end; background: var(--out); }
+    .composer {
+      display: flex;
+      gap: 8px;
+      padding: 12px;
+      border-top: 1px solid var(--line);
+      background: var(--panel);
+    }
+    #text {
+      flex: 1;
+      resize: none;
+      min-height: 44px;
+      max-height: 120px;
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid var(--line);
+      background: var(--bg);
+      color: var(--text);
+      font: inherit;
+    }
+    #send {
+      border: 0;
+      border-radius: 10px;
+      padding: 0 16px;
+      background: var(--accent);
+      color: white;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .empty {
+      margin: auto;
+      color: var(--muted);
+      text-align: center;
+      padding: 24px;
+    }
+    .status {
+      font-size: 0.75rem;
+      color: var(--muted);
+      font-weight: 400;
+      margin-left: auto;
+    }
+  </style>
+</head>
+<body>
+  <aside class="sidebar">
+    <header>
+      LNL
+      <span class="status" id="status">…</span>
+    </header>
+    <div id="chats"></div>
+  </aside>
+  <main class="chat">
+    <div class="chat-top">
+      <button class="back" id="back" type="button">←</button>
+      <div id="chatTitle">Выбери чат</div>
+    </div>
+    <div id="messages"><div class="empty">Нет открытого диалога</div></div>
+    <form class="composer" id="form">
+      <textarea id="text" placeholder="Сообщение…" rows="1"></textarea>
+      <button id="send" type="submit">→</button>
+    </form>
+  </main>
+  <script>
+    let currentPeer = null;
+    const chatsEl = document.getElementById("chats");
+    const messagesEl = document.getElementById("messages");
+    const titleEl = document.getElementById("chatTitle");
+    const statusEl = document.getElementById("status");
+    const textEl = document.getElementById("text");
+    const form = document.getElementById("form");
+    const back = document.getElementById("back");
+
+    async function api(path, opts) {
+      const res = await fetch(path, {
+        headers: { "Content-Type": "application/json", ...(opts?.headers || {}) },
+        ...opts,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || res.statusText);
+      return data;
+    }
+
+    function renderBubble(m) {
+      const div = document.createElement("div");
+      div.className = "bubble " + (m.outgoing ? "out" : "in");
+      div.textContent = m.text;
+      div.dataset.id = m.id;
+      return div;
+    }
+
+    async function loadChats() {
+      const chats = await api("/api/chats");
+      chatsEl.innerHTML = "";
+      for (const c of chats) {
+        const item = document.createElement("div");
+        item.className = "chat-item" + (currentPeer === c.peer_id ? " active" : "");
+        item.innerHTML =
+          `<div class="title">${escapeHtml(c.title)}</div>` +
+          `<div class="preview">${escapeHtml(c.last_message || "")}</div>`;
+        item.onclick = () => openChat(c.peer_id, c.title);
+        chatsEl.appendChild(item);
+      }
+    }
+
+    async function openChat(peerId, title) {
+      currentPeer = peerId;
+      document.body.classList.add("chat-open");
+      titleEl.textContent = title || String(peerId);
+      const msgs = await api(`/api/messages/${peerId}`);
+      messagesEl.innerHTML = "";
+      if (!msgs.length) {
+        messagesEl.innerHTML = `<div class="empty">Пока пусто</div>`;
+      } else {
+        for (const m of msgs) messagesEl.appendChild(renderBubble(m));
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+      }
+      await loadChats();
+    }
+
+    function appendLive(peerId, message) {
+      if (currentPeer === peerId) {
+        const empty = messagesEl.querySelector(".empty");
+        if (empty) empty.remove();
+        if (![...messagesEl.children].some((el) => el.dataset.id == message.id)) {
+          messagesEl.appendChild(renderBubble(message));
+          messagesEl.scrollTop = messagesEl.scrollHeight;
+        }
+      }
+      loadChats().catch(console.error);
+    }
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      if (currentPeer == null) return;
+      const text = textEl.value.trim();
+      if (!text) return;
+      textEl.value = "";
+      try {
+        const res = await api(`/api/messages/${currentPeer}`, {
+          method: "POST",
+          body: JSON.stringify({ text }),
+        });
+        appendLive(currentPeer, res.message);
+      } catch (err) {
+        alert(err.message);
+      }
+    });
+
+    back.onclick = () => {
+      document.body.classList.remove("chat-open");
+      currentPeer = null;
+      titleEl.textContent = "Выбери чат";
+      messagesEl.innerHTML = `<div class="empty">Нет открытого диалога</div>`;
+      loadChats().catch(console.error);
+    };
+
+    function connectWs() {
+      const proto = location.protocol === "https:" ? "wss" : "ws";
+      const ws = new WebSocket(`${proto}://${location.host}/ws`);
+      ws.onopen = () => { statusEl.textContent = "online"; };
+      ws.onclose = () => {
+        statusEl.textContent = "offline";
+        setTimeout(connectWs, 1500);
+      };
+      ws.onmessage = (ev) => {
+        try {
+          const data = JSON.parse(ev.data);
+          if (data.type === "new_message") {
+            appendLive(data.peer_id, data.message);
+          }
+        } catch (_) {}
+      };
+    }
+
+    function escapeHtml(s) {
+      return String(s)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;");
+    }
+
+    loadChats().catch((e) => {
+      statusEl.textContent = "error";
+      chatsEl.innerHTML = `<div class="empty">${escapeHtml(e.message)}</div>`;
+    });
+    connectWs();
+  </script>
+</body>
+</html>

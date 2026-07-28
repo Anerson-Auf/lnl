@@ -1,0 +1,7 @@
+/target
+.env
+*.session
+.vscode/
+
+# Android client — в этот репозиторий не кладём
+/clients/
