@@ -1,6 +1,6 @@
-use color_eyre::{eyre::eyre, Result};
-use ferogram::tl;
+use color_eyre::{Result, eyre::eyre};
 use ferogram::Client;
+use ferogram::tl;
 use std::collections::HashSet;
 
 use crate::config::types::{ChatKey, Dialogue, Message, Telegram};
@@ -69,24 +69,20 @@ fn peers_from_filter(f: &tl::enums::DialogFilter) -> Vec<tl::enums::InputPeer> {
 }
 
 async fn peer_title(client: &Client, _input: &tl::enums::InputPeer, key: ChatKey) -> String {
-    if let Ok(peer) = ferogram::PeerRef::from(key.bot_api_id())
+    if let Ok(tl::enums::Peer::User(peer)) = ferogram::PeerRef::from(key.bot_api_id())
         .resolve(client)
         .await
+        && let Ok(users) = client.get_users_by_id(&[peer.user_id]).await
+        && let Some(Some(user)) = users.into_iter().next()
     {
-        if let tl::enums::Peer::User(u) = &peer {
-            if let Ok(users) = client.get_users_by_id(&[u.user_id]).await {
-                if let Some(Some(user)) = users.into_iter().next() {
-                    let first = user.first_name().unwrap_or("");
-                    let last = user.last_name().unwrap_or("");
-                    let name = format!("{first} {last}").trim().to_string();
-                    if !name.is_empty() {
-                        return name;
-                    }
-                    if let Some(uname) = user.username() {
-                        return format!("@{uname}");
-                    }
-                }
-            }
+        let first = user.first_name().unwrap_or("");
+        let last = user.last_name().unwrap_or("");
+        let name = format!("{first} {last}").trim().to_string();
+        if !name.is_empty() {
+            return name;
+        }
+        if let Some(username) = user.username() {
+            return format!("@{username}");
         }
     }
     format!("{}", key.bot_api_id())
@@ -173,13 +169,7 @@ pub async fn seed_dialogues_from_folder(
 
         let title = peer_title(client, &input, key).await;
 
-        telegram.dialogues.insert(
-            key,
-            Dialogue {
-                title,
-                history,
-            },
-        );
+        telegram.dialogues.insert(key, Dialogue { title, history });
     }
 
     Ok(())

@@ -41,6 +41,20 @@
       border-bottom: 1px solid var(--line);
       font-weight: 650;
       letter-spacing: 0.02em;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    #session {
+      min-width: 0;
+      max-width: 150px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      padding: 5px 7px;
+      background: var(--bg);
+      color: var(--text);
+      font: inherit;
+      font-size: 0.8rem;
     }
     #chats {
       overflow: auto;
@@ -142,7 +156,8 @@
 <body>
   <aside class="sidebar">
     <header>
-      LNL
+      <span>LNL</span>
+      <select id="session" aria-label="Telegram-сессия"></select>
       <span class="status" id="status">…</span>
     </header>
     <div id="chats"></div>
@@ -159,9 +174,15 @@
     </form>
   </main>
   <script>
+    let currentSession = null;
     let currentPeer = null;
+    let sessionGeneration = 0;
     let chatGeneration = 0;
+    let loadingChatGeneration = null;
     let pendingMessages = [];
+    let socket = null;
+    let reconnectTimer = null;
+    const sessionEl = document.getElementById("session");
     const chatsEl = document.getElementById("chats");
     const messagesEl = document.getElementById("messages");
     const titleEl = document.getElementById("chatTitle");
@@ -180,6 +201,10 @@
       return data;
     }
 
+    function sessionApi(sessionId, path) {
+      return `/api/sessions/${encodeURIComponent(sessionId)}${path}`;
+    }
+
     function renderBubble(m) {
       const div = document.createElement("div");
       div.className = "bubble " + (m.outgoing ? "out" : "in");
@@ -188,8 +213,26 @@
       return div;
     }
 
-    async function loadChats() {
-      const chats = await api("/api/chats");
+    async function loadSessions() {
+      const sessions = await api("/api/sessions");
+      if (!sessions.length) throw new Error("Нет настроенных сессий");
+
+      sessionEl.innerHTML = "";
+      for (const session of sessions) {
+        const option = document.createElement("option");
+        option.value = session.id;
+        option.textContent =
+          session.id + (session.is_default && session.id !== "default" ? " · основная" : "");
+        sessionEl.appendChild(option);
+      }
+      const selected = sessions.find((session) => session.is_default) || sessions[0];
+      sessionEl.value = selected.id;
+      switchSession(selected.id);
+    }
+
+    async function loadChats(sessionId = currentSession, generation = sessionGeneration) {
+      const chats = await api(sessionApi(sessionId, "/chats"));
+      if (currentSession !== sessionId || sessionGeneration !== generation) return;
       chatsEl.innerHTML = "";
       for (const c of chats) {
         const item = document.createElement("div");
@@ -197,19 +240,45 @@
         item.innerHTML =
           `<div class="title">${escapeHtml(c.title)}</div>` +
           `<div class="preview">${escapeHtml(c.last_message || "")}</div>`;
-        item.onclick = () => openChat(c.peer_id, c.title);
+        item.onclick = () => openChat(sessionId, c.peer_id, c.title);
         chatsEl.appendChild(item);
       }
     }
 
-    async function openChat(peerId, title) {
+    async function openChat(sessionId, peerId, title) {
+      if (sessionId !== currentSession) return;
+      const sessionVersion = sessionGeneration;
       const generation = ++chatGeneration;
+      loadingChatGeneration = generation;
       pendingMessages = [];
       currentPeer = peerId;
       document.body.classList.add("chat-open");
       titleEl.textContent = title || String(peerId);
-      const msgs = await api(`/api/messages/${peerId}`);
-      if (currentPeer !== peerId || generation !== chatGeneration) return;
+      messagesEl.innerHTML = `<div class="empty">Загрузка…</div>`;
+      let msgs;
+      try {
+        msgs = await api(sessionApi(sessionId, `/messages/${peerId}`));
+      } catch (error) {
+        if (
+          currentSession !== sessionId ||
+          sessionGeneration !== sessionVersion ||
+          currentPeer !== peerId ||
+          generation !== chatGeneration
+        ) return;
+        loadingChatGeneration = null;
+        pendingMessages = [];
+        currentPeer = null;
+        messagesEl.innerHTML =
+          `<div class="empty">${escapeHtml(error.message)}</div>`;
+        loadChats(sessionId, sessionVersion).catch(console.error);
+        return;
+      }
+      if (
+        currentSession !== sessionId ||
+        sessionGeneration !== sessionVersion ||
+        currentPeer !== peerId ||
+        generation !== chatGeneration
+      ) return;
       messagesEl.innerHTML = "";
       if (!msgs.length) {
         messagesEl.innerHTML = `<div class="empty">Пока пусто</div>`;
@@ -218,8 +287,9 @@
       }
       for (const message of pendingMessages) appendMessage(message);
       pendingMessages = [];
+      loadingChatGeneration = null;
       messagesEl.scrollTop = messagesEl.scrollHeight;
-      await loadChats();
+      await loadChats(sessionId, sessionVersion);
     }
 
     function appendMessage(message) {
@@ -227,57 +297,120 @@
       messagesEl.appendChild(renderBubble(message));
     }
 
-    function appendLive(peerId, message) {
+    function appendLive(sessionId, peerId, message) {
+      if (currentSession !== sessionId) return;
       if (currentPeer === peerId) {
-        pendingMessages.push(message);
+        if (loadingChatGeneration === chatGeneration) pendingMessages.push(message);
         const empty = messagesEl.querySelector(".empty");
         if (empty) empty.remove();
         appendMessage(message);
         messagesEl.scrollTop = messagesEl.scrollHeight;
       }
-      loadChats().catch(console.error);
+      loadChats(sessionId, sessionGeneration).catch(console.error);
     }
 
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
-      if (currentPeer == null) return;
+      if (
+        currentSession == null ||
+        currentPeer == null ||
+        loadingChatGeneration === chatGeneration
+      ) return;
+      const sessionId = currentSession;
+      const peerId = currentPeer;
+      const generation = sessionGeneration;
       const text = textEl.value;
       if (!text.trim()) return;
       textEl.value = "";
       try {
-        const res = await api(`/api/messages/${currentPeer}`, {
+        const res = await api(sessionApi(sessionId, `/messages/${peerId}`), {
           method: "POST",
           body: JSON.stringify({ text }),
         });
-        appendLive(currentPeer, res.message);
+        if (currentSession === sessionId && sessionGeneration === generation) {
+          appendLive(sessionId, peerId, res.message);
+        }
       } catch (err) {
-        alert(err.message);
+        if (currentSession === sessionId && sessionGeneration === generation) {
+          alert(err.message);
+        }
       }
     });
 
     back.onclick = () => {
       chatGeneration++;
+      loadingChatGeneration = null;
       pendingMessages = [];
       document.body.classList.remove("chat-open");
       currentPeer = null;
       titleEl.textContent = "Выбери чат";
       messagesEl.innerHTML = `<div class="empty">Нет открытого диалога</div>`;
-      loadChats().catch(console.error);
+      if (currentSession != null) {
+        loadChats(currentSession, sessionGeneration).catch(console.error);
+      }
     };
 
-    function connectWs() {
+    function switchSession(sessionId) {
+      if (!sessionId || sessionId === currentSession) return;
+
+      const generation = ++sessionGeneration;
+      chatGeneration++;
+      loadingChatGeneration = null;
+      pendingMessages = [];
+      currentSession = sessionId;
+      currentPeer = null;
+      document.body.classList.remove("chat-open");
+      titleEl.textContent = "Выбери чат";
+      messagesEl.innerHTML = `<div class="empty">Нет открытого диалога</div>`;
+      chatsEl.innerHTML = `<div class="empty">Загрузка…</div>`;
+      statusEl.textContent = "connecting";
+
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+      if (socket) {
+        socket.onclose = null;
+        socket.close();
+        socket = null;
+      }
+
+      connectWs(sessionId, generation);
+      loadChats(sessionId, generation).catch((error) => {
+        if (currentSession !== sessionId || sessionGeneration !== generation) return;
+        statusEl.textContent = "error";
+        chatsEl.innerHTML = `<div class="empty">${escapeHtml(error.message)}</div>`;
+      });
+    }
+
+    function connectWs(sessionId, generation) {
+      if (currentSession !== sessionId || sessionGeneration !== generation) return;
       const proto = location.protocol === "https:" ? "wss" : "ws";
-      const ws = new WebSocket(`${proto}://${location.host}/ws`);
-      ws.onopen = () => { statusEl.textContent = "online"; };
+      const ws = new WebSocket(
+        `${proto}://${location.host}${sessionApi(sessionId, "/ws")}`
+      );
+      socket = ws;
+      ws.onopen = () => {
+        if (socket === ws && currentSession === sessionId) statusEl.textContent = "online";
+      };
       ws.onclose = () => {
+        if (
+          socket !== ws ||
+          currentSession !== sessionId ||
+          sessionGeneration !== generation
+        ) return;
+        socket = null;
         statusEl.textContent = "offline";
-        setTimeout(connectWs, 1500);
+        reconnectTimer = setTimeout(() => connectWs(sessionId, generation), 1500);
       };
       ws.onmessage = (ev) => {
+        if (
+          socket !== ws ||
+          currentSession !== sessionId ||
+          sessionGeneration !== generation
+        ) return;
         try {
           const data = JSON.parse(ev.data);
           if (data.type === "new_message") {
-            appendLive(data.peer_id, data.message);
+            appendLive(sessionId, data.peer_id, data.message);
           }
         } catch (_) {}
       };
@@ -291,11 +424,12 @@
         .replaceAll('"', "&quot;");
     }
 
-    loadChats().catch((e) => {
+    sessionEl.onchange = () => switchSession(sessionEl.value);
+
+    loadSessions().catch((e) => {
       statusEl.textContent = "error";
       chatsEl.innerHTML = `<div class="empty">${escapeHtml(e.message)}</div>`;
     });
-    connectWs();
   </script>
 </body>
 </html>

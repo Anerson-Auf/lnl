@@ -1,5 +1,5 @@
-use std::io::{self, BufRead, Write};
 use color_eyre::Result;
+use std::io::{self, BufRead, Write};
 pub fn prompt(message: &str) -> Result<String> {
     let mut stdout = io::stdout().lock();
     stdout.write_all(message.as_bytes())?;

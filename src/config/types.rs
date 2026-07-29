@@ -83,10 +83,7 @@ pub struct ChatSummary {
 #[derive(Clone, Debug, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum WsEvent {
-    NewMessage {
-        peer_id: i64,
-        message: Message,
-    },
+    NewMessage { peer_id: i64, message: Message },
 }
 
 #[cfg(test)]
