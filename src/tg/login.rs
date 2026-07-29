@@ -2,7 +2,6 @@ use color_eyre::{eyre::WrapErr, Report, Result};
 use ferogram::{Client, SendCodeOutcome, SignInError};
 use std::net::SocketAddr;
 use std::sync::Arc;
-use tokio::task::JoinSet;
 
 use super::handlers::handle_update;
 use super::history::seed_dialogues_from_folder;
@@ -81,27 +80,27 @@ pub async fn init_telegram() -> Result<()> {
         .unwrap_or_else(|_| "0.0.0.0:8080".into())
         .parse()
         .wrap_err("LNL_BIND")?;
+    let listener = tokio::net::TcpListener::bind(bind)
+        .await
+        .wrap_err("не удалось открыть LNL_BIND")?;
 
     let api_state = (*state).clone();
     let api_task = tokio::spawn(async move {
-        if let Err(e) = api::serve(api_state, bind).await {
+        if let Err(e) = api::serve(api_state, listener, bind).await {
             eprintln!("API error: {e:#}");
         }
     });
 
     let mut stream = client.stream_updates();
-    let mut handler_tasks = JoinSet::new();
 
     println!("Waiting for messages... (Ctrl+C to quit)");
     loop {
-        while handler_tasks.try_join_next().is_some() {}
-
         tokio::select! {
             _ = tokio::signal::ctrl_c() => break,
             upd = stream.next() => {
-                let Some(upd) = upd else { continue };
+                let Some(upd) = upd else { break };
                 let s = Arc::clone(&state);
-                handler_tasks.spawn(handle_update(s, upd));
+                handle_update(s, upd).await;
             }
         }
     }
@@ -113,7 +112,6 @@ pub async fn init_telegram() -> Result<()> {
         .map_err(|e| color_eyre::eyre::eyre!("{e}"))?;
     shutdown.cancel();
     api_task.abort();
-    while handler_tasks.join_next().await.is_some() {}
 
     Ok(())
 }

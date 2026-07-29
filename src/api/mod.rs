@@ -13,7 +13,11 @@ use tower_http::services::ServeDir;
 
 pub use state::AppState;
 
-pub async fn serve(state: AppState, bind: SocketAddr) -> Result<()> {
+pub async fn serve(
+    state: AppState,
+    listener: tokio::net::TcpListener,
+    bind: SocketAddr,
+) -> Result<()> {
     let api = Router::new()
         .route("/api/chats", get(routes::list_chats))
         .route("/api/messages/{peer_id}", get(routes::get_messages))
@@ -33,7 +37,6 @@ pub async fn serve(state: AppState, bind: SocketAddr) -> Result<()> {
         api.layer(CorsLayer::permissive())
     };
 
-    let listener = tokio::net::TcpListener::bind(bind).await?;
     axum::serve(listener, app).await?;
     Ok(())
 }

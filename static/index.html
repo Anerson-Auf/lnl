@@ -160,6 +160,7 @@
   </main>
   <script>
     let currentPeer = null;
+    let chatGeneration = 0;
     const chatsEl = document.getElementById("chats");
     const messagesEl = document.getElementById("messages");
     const titleEl = document.getElementById("chatTitle");
@@ -201,10 +202,12 @@
     }
 
     async function openChat(peerId, title) {
+      const generation = ++chatGeneration;
       currentPeer = peerId;
       document.body.classList.add("chat-open");
       titleEl.textContent = title || String(peerId);
       const msgs = await api(`/api/messages/${peerId}`);
+      if (currentPeer !== peerId || generation !== chatGeneration) return;
       messagesEl.innerHTML = "";
       if (!msgs.length) {
         messagesEl.innerHTML = `<div class="empty">Пока пусто</div>`;
@@ -217,6 +220,7 @@
 
     function appendLive(peerId, message) {
       if (currentPeer === peerId) {
+        chatGeneration++;
         const empty = messagesEl.querySelector(".empty");
         if (empty) empty.remove();
         if (![...messagesEl.children].some((el) => el.dataset.id == message.id)) {
@@ -230,8 +234,8 @@
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
       if (currentPeer == null) return;
-      const text = textEl.value.trim();
-      if (!text) return;
+      const text = textEl.value;
+      if (!text.trim()) return;
       textEl.value = "";
       try {
         const res = await api(`/api/messages/${currentPeer}`, {
@@ -245,6 +249,7 @@
     });
 
     back.onclick = () => {
+      chatGeneration++;
       document.body.classList.remove("chat-open");
       currentPeer = null;
       titleEl.textContent = "Выбери чат";

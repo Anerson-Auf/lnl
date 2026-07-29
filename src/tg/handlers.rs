@@ -9,8 +9,10 @@ pub async fn handle_update(state: Arc<AppState>, update: Update) {
         return;
     };
 
-    let text = msg.text().unwrap_or("").trim();
-    if text.is_empty() {
+    let Some(text) = msg.text() else {
+        return;
+    };
+    if text.trim().is_empty() {
         return;
     }
 
@@ -34,11 +36,11 @@ pub async fn handle_update(state: Arc<AppState>, update: Update) {
     };
     let peer_id = key.bot_api_id();
 
-    if let Some(mut dialogue) = state.telegram.dialogues.get_mut(&key) {
-        if !dialogue.history.iter().any(|m| m.id == message.id) {
-            dialogue.history.push(message.clone());
-        }
-    }
+    let inserted = state
+        .telegram
+        .dialogues
+        .get_mut(&key)
+        .is_some_and(|mut dialogue| dialogue.insert_new_message(message.clone()));
 
     // println!(
     //     "{} {}: {}",
@@ -47,5 +49,7 @@ pub async fn handle_update(state: Arc<AppState>, update: Update) {
     //     message.text
     // );
 
-    let _ = state.events.send(WsEvent::NewMessage { peer_id, message });
+    if inserted {
+        let _ = state.events.send(WsEvent::NewMessage { peer_id, message });
+    }
 }

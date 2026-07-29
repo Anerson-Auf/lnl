@@ -16,6 +16,21 @@ pub struct Dialogue {
     pub history: Vec<Message>,
 }
 
+impl Dialogue {
+    pub fn insert_new_message(&mut self, message: Message) -> bool {
+        match self
+            .history
+            .binary_search_by_key(&message.id, |existing| existing.id)
+        {
+            Ok(_) => false,
+            Err(index) => {
+                self.history.insert(index, message);
+                true
+            }
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ChatKey {
@@ -72,4 +87,38 @@ pub enum WsEvent {
         peer_id: i64,
         message: Message,
     },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Dialogue, Message};
+
+    fn message(id: i32) -> Message {
+        Message {
+            id,
+            text: "text".to_string(),
+            outgoing: false,
+            date: 0,
+        }
+    }
+
+    #[test]
+    fn insert_new_message_deduplicates_and_orders_by_id() {
+        let mut dialogue = Dialogue {
+            title: "chat".to_string(),
+            history: Vec::new(),
+        };
+
+        assert!(dialogue.insert_new_message(message(43)));
+        assert!(dialogue.insert_new_message(message(42)));
+        assert!(!dialogue.insert_new_message(message(42)));
+        assert_eq!(
+            dialogue
+                .history
+                .iter()
+                .map(|message| message.id)
+                .collect::<Vec<_>>(),
+            [42, 43]
+        );
+    }
 }
