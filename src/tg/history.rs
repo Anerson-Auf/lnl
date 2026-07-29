@@ -11,6 +11,10 @@ fn text_of(title: &tl::enums::TextWithEntities) -> &str {
     }
 }
 
+fn same_folder_name(left: &str, right: &str) -> bool {
+    left.to_lowercase() == right.to_lowercase()
+}
+
 fn chat_key_from_input(peer: &tl::enums::InputPeer) -> Option<ChatKey> {
     match peer {
         tl::enums::InputPeer::User(u) => Some(ChatKey::User(u.user_id)),
@@ -106,13 +110,14 @@ pub async fn seed_dialogues_from_folder(
 
     let tl::enums::messages::DialogFilters::DialogFilters(df) = resp;
 
-    let wanted = folder_name.to_lowercase();
     let filter = df.filters.into_iter().find(|f| match f {
         tl::enums::DialogFilter::DialogFilter(f) => {
-            text_of(&f.title).eq_ignore_ascii_case(&wanted)
+            same_folder_name(text_of(&f.title), folder_name)
         }
-        tl::enums::DialogFilter::Chatlist(f) => text_of(&f.title).eq_ignore_ascii_case(&wanted),
-        tl::enums::DialogFilter::Default => wanted == "all chats" || wanted == "all",
+        tl::enums::DialogFilter::Chatlist(f) => same_folder_name(text_of(&f.title), folder_name),
+        tl::enums::DialogFilter::Default => {
+            same_folder_name(folder_name, "all chats") || same_folder_name(folder_name, "all")
+        }
     });
 
     let Some(filter) = filter else {
@@ -151,8 +156,8 @@ pub async fn seed_dialogues_from_folder(
             .messages
             .into_iter()
             .filter_map(|m| {
-                let text = m.text()?.trim();
-                if text.is_empty() {
+                let text = m.text()?;
+                if text.trim().is_empty() {
                     return None;
                 }
                 Some(Message {
@@ -178,4 +183,14 @@ pub async fn seed_dialogues_from_folder(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::same_folder_name;
+
+    #[test]
+    fn same_folder_name_supports_cyrillic() {
+        assert!(same_folder_name("Тест", "тест"));
+    }
 }

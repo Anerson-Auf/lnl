@@ -2,7 +2,7 @@ use ferogram::Client;
 use std::sync::Arc;
 use tokio::sync::broadcast;
 
-use crate::config::types::{Telegram, WsEvent};
+use crate::config::types::{ChatKey, Message, Telegram, WsEvent};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -19,5 +19,20 @@ impl AppState {
             telegram,
             events,
         }
+    }
+
+    pub fn record_message(&self, key: ChatKey, message: Message) -> bool {
+        let Some(mut dialogue) = self.telegram.dialogues.get_mut(&key) else {
+            return false;
+        };
+        if !dialogue.insert_new_message(message.clone()) {
+            return false;
+        }
+
+        let _ = self.events.send(WsEvent::NewMessage {
+            peer_id: key.bot_api_id(),
+            message,
+        });
+        true
     }
 }

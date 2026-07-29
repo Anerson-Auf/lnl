@@ -2,7 +2,6 @@ use color_eyre::{eyre::WrapErr, Report, Result};
 use ferogram::{Client, SendCodeOutcome, SignInError};
 use std::net::SocketAddr;
 use std::sync::Arc;
-use tokio::task::JoinSet;
 
 use super::handlers::handle_update;
 use super::history::seed_dialogues_from_folder;
@@ -81,30 +80,34 @@ pub async fn init_telegram() -> Result<()> {
         .unwrap_or_else(|_| "0.0.0.0:8080".into())
         .parse()
         .wrap_err("LNL_BIND")?;
+    let listener = tokio::net::TcpListener::bind(bind)
+        .await
+        .wrap_err("не удалось открыть LNL_BIND")?;
 
     let api_state = (*state).clone();
-    let api_task = tokio::spawn(async move {
-        if let Err(e) = api::serve(api_state, bind).await {
-            eprintln!("API error: {e:#}");
-        }
-    });
+    let mut api_task = tokio::spawn(api::serve(api_state, listener, bind));
 
     let mut stream = client.stream_updates();
-    let mut handler_tasks = JoinSet::new();
 
     println!("Waiting for messages... (Ctrl+C to quit)");
-    loop {
-        while handler_tasks.try_join_next().is_some() {}
-
+    let api_error = loop {
         tokio::select! {
-            _ = tokio::signal::ctrl_c() => break,
+            _ = tokio::signal::ctrl_c() => break None,
+            result = &mut api_task => {
+                let error = match result {
+                    Ok(Ok(())) => color_eyre::eyre::eyre!("API server stopped unexpectedly"),
+                    Ok(Err(error)) => color_eyre::eyre::eyre!("API server stopped: {error:#}"),
+                    Err(error) => color_eyre::eyre::eyre!("API task failed: {error}"),
+                };
+                break Some(error);
+            }
             upd = stream.next() => {
-                let Some(upd) = upd else { continue };
+                let Some(upd) = upd else { break None };
                 let s = Arc::clone(&state);
-                handler_tasks.spawn(handle_update(s, upd));
+                handle_update(s, upd).await;
             }
         }
-    }
+    };
 
     println!("Saving session...");
     client
@@ -113,9 +116,11 @@ pub async fn init_telegram() -> Result<()> {
         .map_err(|e| color_eyre::eyre::eyre!("{e}"))?;
     shutdown.cancel();
     api_task.abort();
-    while handler_tasks.join_next().await.is_some() {}
 
-    Ok(())
+    match api_error {
+        Some(error) => Err(error),
+        None => Ok(()),
+    }
 }
 
 async fn ensure_authorized(client: &Client) -> Result<()> {

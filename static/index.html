@@ -160,6 +160,8 @@
   </main>
   <script>
     let currentPeer = null;
+    let chatGeneration = 0;
+    let pendingMessages = [];
     const chatsEl = document.getElementById("chats");
     const messagesEl = document.getElementById("messages");
     const titleEl = document.getElementById("chatTitle");
@@ -201,28 +203,37 @@
     }
 
     async function openChat(peerId, title) {
+      const generation = ++chatGeneration;
+      pendingMessages = [];
       currentPeer = peerId;
       document.body.classList.add("chat-open");
       titleEl.textContent = title || String(peerId);
       const msgs = await api(`/api/messages/${peerId}`);
+      if (currentPeer !== peerId || generation !== chatGeneration) return;
       messagesEl.innerHTML = "";
       if (!msgs.length) {
         messagesEl.innerHTML = `<div class="empty">Пока пусто</div>`;
       } else {
         for (const m of msgs) messagesEl.appendChild(renderBubble(m));
-        messagesEl.scrollTop = messagesEl.scrollHeight;
       }
+      for (const message of pendingMessages) appendMessage(message);
+      pendingMessages = [];
+      messagesEl.scrollTop = messagesEl.scrollHeight;
       await loadChats();
+    }
+
+    function appendMessage(message) {
+      if ([...messagesEl.children].some((el) => el.dataset.id == message.id)) return;
+      messagesEl.appendChild(renderBubble(message));
     }
 
     function appendLive(peerId, message) {
       if (currentPeer === peerId) {
+        pendingMessages.push(message);
         const empty = messagesEl.querySelector(".empty");
         if (empty) empty.remove();
-        if (![...messagesEl.children].some((el) => el.dataset.id == message.id)) {
-          messagesEl.appendChild(renderBubble(message));
-          messagesEl.scrollTop = messagesEl.scrollHeight;
-        }
+        appendMessage(message);
+        messagesEl.scrollTop = messagesEl.scrollHeight;
       }
       loadChats().catch(console.error);
     }
@@ -230,8 +241,8 @@
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
       if (currentPeer == null) return;
-      const text = textEl.value.trim();
-      if (!text) return;
+      const text = textEl.value;
+      if (!text.trim()) return;
       textEl.value = "";
       try {
         const res = await api(`/api/messages/${currentPeer}`, {
@@ -245,6 +256,8 @@
     });
 
     back.onclick = () => {
+      chatGeneration++;
+      pendingMessages = [];
       document.body.classList.remove("chat-open");
       currentPeer = null;
       titleEl.textContent = "Выбери чат";

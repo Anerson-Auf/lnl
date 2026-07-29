@@ -5,7 +5,7 @@ use axum::Json;
 use ferogram::InputMessage;
 use serde::{Deserialize, Serialize};
 
-use crate::config::types::{ChatKey, ChatSummary, Message, WsEvent};
+use crate::config::types::{ChatKey, ChatSummary, Message};
 
 use super::state::AppState;
 
@@ -69,8 +69,8 @@ pub async fn send_message(
     Path(peer_id): Path<i64>,
     Json(body): Json<SendBody>,
 ) -> Result<Json<SendResponse>, (StatusCode, Json<ErrorBody>)> {
-    let text = body.text.trim();
-    if text.is_empty() {
+    let text = body.text;
+    if text.trim().is_empty() {
         return Err(err(StatusCode::BAD_REQUEST, "пустой text"));
     }
 
@@ -84,22 +84,18 @@ pub async fn send_message(
 
     let sent = state
         .client
-        .send_message(peer_id, InputMessage::text(text))
+        .send_message(peer_id, InputMessage::text(text.as_str()))
         .await
         .map_err(|e| err(StatusCode::BAD_GATEWAY, format!("telegram: {e}")))?;
 
     let message = Message {
         id: sent.id(),
-        text: text.to_string(),
+        text,
         outgoing: true,
         date: sent.date(),
     };
 
-    if let Some(mut dialogue) = state.telegram.dialogues.get_mut(&key) {
-        dialogue.history.push(message.clone());
-    }
-
-    let _ = state.events.send(WsEvent::NewMessage { peer_id, message: message.clone() });
+    state.record_message(key, message.clone());
 
     Ok(Json(SendResponse {
         ok: true,
