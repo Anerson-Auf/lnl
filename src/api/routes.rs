@@ -95,11 +95,7 @@ pub async fn send_message(
         date: sent.date(),
     };
 
-    let inserted = state
-        .telegram
-        .dialogues
-        .get_mut(&key)
-        .is_some_and(|mut dialogue| dialogue.insert_new_message(message.clone()));
+    let inserted = state.insert_message(key, message.clone());
     if inserted {
         let _ = state.events.send(WsEvent::NewMessage {
             peer_id,

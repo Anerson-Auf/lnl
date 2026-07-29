@@ -2,7 +2,7 @@ use ferogram::Client;
 use std::sync::Arc;
 use tokio::sync::broadcast;
 
-use crate::config::types::{Telegram, WsEvent};
+use crate::config::types::{ChatKey, Message, Telegram, WsEvent};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -19,5 +19,12 @@ impl AppState {
             telegram,
             events,
         }
+    }
+
+    pub fn insert_message(&self, key: ChatKey, message: Message) -> bool {
+        self.telegram
+            .dialogues
+            .get_mut(&key)
+            .is_some_and(|mut dialogue| dialogue.insert_new_message(message))
     }
 }

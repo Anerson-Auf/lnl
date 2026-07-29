@@ -36,18 +36,7 @@ pub async fn handle_update(state: Arc<AppState>, update: Update) {
     };
     let peer_id = key.bot_api_id();
 
-    let inserted = state
-        .telegram
-        .dialogues
-        .get_mut(&key)
-        .is_some_and(|mut dialogue| dialogue.insert_new_message(message.clone()));
-
-    // println!(
-    //     "{} {}: {}",
-    //     if message.outgoing { "→" } else { "←" },
-    //     peer_id,
-    //     message.text
-    // );
+    let inserted = state.insert_message(key, message.clone());
 
     if inserted {
         let _ = state.events.send(WsEvent::NewMessage { peer_id, message });
