@@ -5,7 +5,7 @@ use axum::Json;
 use ferogram::InputMessage;
 use serde::{Deserialize, Serialize};
 
-use crate::config::types::{ChatKey, ChatSummary, Message, WsEvent};
+use crate::config::types::{ChatKey, ChatSummary, Message};
 
 use super::state::AppState;
 
@@ -95,13 +95,7 @@ pub async fn send_message(
         date: sent.date(),
     };
 
-    let inserted = state.insert_message(key, message.clone());
-    if inserted {
-        let _ = state.events.send(WsEvent::NewMessage {
-            peer_id,
-            message: message.clone(),
-        });
-    }
+    state.record_message(key, message.clone());
 
     Ok(Json(SendResponse {
         ok: true,

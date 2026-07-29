@@ -21,10 +21,18 @@ impl AppState {
         }
     }
 
-    pub fn insert_message(&self, key: ChatKey, message: Message) -> bool {
-        self.telegram
-            .dialogues
-            .get_mut(&key)
-            .is_some_and(|mut dialogue| dialogue.insert_new_message(message))
+    pub fn record_message(&self, key: ChatKey, message: Message) -> bool {
+        let Some(mut dialogue) = self.telegram.dialogues.get_mut(&key) else {
+            return false;
+        };
+        if !dialogue.insert_new_message(message.clone()) {
+            return false;
+        }
+
+        let _ = self.events.send(WsEvent::NewMessage {
+            peer_id: key.bot_api_id(),
+            message,
+        });
+        true
     }
 }

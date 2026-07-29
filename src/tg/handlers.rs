@@ -2,7 +2,7 @@ use ferogram::update::Update;
 use std::sync::Arc;
 
 use crate::api::AppState;
-use crate::config::types::{ChatKey, Message, WsEvent};
+use crate::config::types::{ChatKey, Message};
 
 pub async fn handle_update(state: Arc<AppState>, update: Update) {
     let Update::NewMessage(msg) = update else {
@@ -23,22 +23,11 @@ pub async fn handle_update(state: Arc<AppState>, update: Update) {
         return;
     };
 
-    // Только чаты из папки релея.
-    if !state.telegram.dialogues.contains_key(&key) {
-        return;
-    }
-
     let message = Message {
         id: msg.id(),
         text: text.to_string(),
         outgoing: msg.outgoing(),
         date: msg.date(),
     };
-    let peer_id = key.bot_api_id();
-
-    let inserted = state.insert_message(key, message.clone());
-
-    if inserted {
-        let _ = state.events.send(WsEvent::NewMessage { peer_id, message });
-    }
+    state.record_message(key, message);
 }
