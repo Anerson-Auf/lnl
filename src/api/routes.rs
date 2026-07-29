@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use crate::config::types::{ChatKey, ChatSummary, Message};
 
-use super::state::{AppState, MessageSender, SessionState};
+use super::state::{AppState, HistoryLoader, MessageSender, SessionState};
 
 #[derive(Serialize)]
 pub(crate) struct ErrorBody {
@@ -28,8 +28,8 @@ pub async fn list_sessions<C: Send + Sync + 'static>(
 
 pub async fn list_default_chats<C: Send + Sync + 'static>(
     State(state): State<AppState<C>>,
-) -> impl IntoResponse {
-    list_chats_for(state.default_session())
+) -> Result<Json<Vec<ChatSummary>>, ApiError> {
+    Ok(list_chats_for(resolve_default(&state)?))
 }
 
 pub async fn list_session_chats<C: Send + Sync + 'static>(
@@ -58,29 +58,35 @@ fn list_chats_for<C>(session: Arc<SessionState<C>>) -> Json<Vec<ChatSummary>> {
     Json(chats)
 }
 
-pub async fn get_default_messages<C: Send + Sync + 'static>(
+pub async fn get_default_messages<C: HistoryLoader>(
     State(state): State<AppState<C>>,
     Path(peer_id): Path<i64>,
 ) -> Result<Json<Vec<Message>>, ApiError> {
-    get_messages_for(state.default_session(), peer_id)
+    get_messages_for(resolve_default(&state)?, peer_id).await
 }
 
-pub async fn get_session_messages<C: Send + Sync + 'static>(
+pub async fn get_session_messages<C: HistoryLoader>(
     State(state): State<AppState<C>>,
     Path((session_id, peer_id)): Path<(String, i64)>,
 ) -> Result<Json<Vec<Message>>, ApiError> {
-    get_messages_for(resolve_session(&state, &session_id)?, peer_id)
+    get_messages_for(resolve_session(&state, &session_id)?, peer_id).await
 }
 
-fn get_messages_for<C>(
+async fn get_messages_for<C: HistoryLoader>(
     session: Arc<SessionState<C>>,
     peer_id: i64,
 ) -> Result<Json<Vec<Message>>, ApiError> {
     let key = ChatKey::from_bot_api_id(peer_id);
-    let Some(dialogue) = session.telegram.dialogues.get(&key) else {
+    let Some(history) = session.history(key).await.map_err(|_| {
+        err(
+            StatusCode::BAD_GATEWAY,
+            "не удалось загрузить историю Telegram",
+        )
+    })?
+    else {
         return Err(err(StatusCode::NOT_FOUND, format!("нет чата {peer_id}")));
     };
-    Ok(Json(dialogue.history.clone()))
+    Ok(Json(history))
 }
 
 #[derive(Deserialize)]
@@ -99,7 +105,7 @@ pub async fn send_default_message<C: MessageSender>(
     Path(peer_id): Path<i64>,
     Json(body): Json<SendBody>,
 ) -> Result<Json<SendResponse>, ApiError> {
-    send_message_for(state.default_session(), peer_id, body).await
+    send_message_for(resolve_default(&state)?, peer_id, body).await
 }
 
 pub async fn send_session_message<C: MessageSender>(
@@ -148,7 +154,24 @@ fn resolve_session<C>(
     state: &AppState<C>,
     session_id: &str,
 ) -> Result<Arc<SessionState<C>>, ApiError> {
-    state
-        .session(session_id)
-        .ok_or_else(|| err(StatusCode::NOT_FOUND, format!("нет сессии {session_id}")))
+    match state.session(session_id) {
+        Some(session) => Ok(session),
+        None if state.is_configured(session_id) => Err(err(
+            StatusCode::SERVICE_UNAVAILABLE,
+            format!("аккаунт {session_id} ещё не авторизован"),
+        )),
+        None => Err(err(
+            StatusCode::NOT_FOUND,
+            format!("нет сессии {session_id}"),
+        )),
+    }
+}
+
+fn resolve_default<C>(state: &AppState<C>) -> Result<Arc<SessionState<C>>, ApiError> {
+    state.default_session().ok_or_else(|| {
+        err(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "основной аккаунт ещё не авторизован",
+        )
+    })
 }

@@ -17,6 +17,8 @@
 ```
 
 Ответ не содержит пути session-файлов, `api_hash` или настройки прокси.
+До завершения входа слот не попадает в этот публичный список. Настроенный, но
+ещё не готовый scoped account возвращает `503`; неизвестный id — `404`.
 
 ### Scoped API
 
@@ -126,5 +128,30 @@
 4. На cleartext HTTP в debug: `android:usesCleartextTraffic="true"` или network security config.
 5. Сначала `GET /api/sessions`, затем хранить выбранный `session_id` и
    использовать scoped REST/WS; legacy URL подходят для single-account клиента.
-6. Auth пока нет — не светить API в интернет без токена/VPN. При нескольких
-   аккаунтах цена ошибочной публикации API выше.
+6. У публичного Android relay API auth пока нет — не светить его в интернет
+   без токена/VPN. При нескольких аккаунтах цена ошибочной публикации выше.
+
+## Панель аккаунтов
+
+При `LNL_DEBUG_UI=1` отдельный admin-сервер поднимается на
+`LNL_ADMIN_BIND` (по умолчанию `127.0.0.1:8081`). Не-loopback адрес
+отклоняется. Для запуска нужен `LNL_ADMIN_TOKEN` длиной не менее 32 байт.
+Открывай именно напечатанный server URL; с VPS пробрасывай его SSH-туннелем.
+
+Все `/api/admin/*` требуют точный заголовок
+`Authorization: Bearer <LNL_ADMIN_TOKEN>`. Изменяющие запросы дополнительно
+принимаются только с exact same-origin панели. Ответы авторизации не
+кэшируются.
+
+- `GET /api/admin/accounts` — все настроенные слоты, статус и защищённый
+  профиль готового аккаунта.
+- `POST /api/admin/accounts/{id}/auth/phone` — `{ "phone": "+7999…" }`.
+- `POST /api/admin/accounts/{id}/auth/code` —
+  `{ "flow_id": "…", "code": "…" }`.
+- `POST /api/admin/accounts/{id}/auth/password` —
+  `{ "flow_id": "…", "password": "…" }`.
+- `GET /api/admin/accounts/{id}/avatar` — безопасный raster-аватар.
+
+`flow_id`, OTP и 2FA из одного слота не принимаются другим. OTP, пароль и
+Telegram challenge остаются только в памяти. Rich profile и аватар никогда не
+добавляются в публичный `GET /api/sessions`.

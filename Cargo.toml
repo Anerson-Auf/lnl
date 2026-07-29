@@ -10,10 +10,12 @@ dashmap = "6.2.1"
 dotenvy = "0.15.7"
 ferogram = "0.6.4"
 futures-util = "0.3.33"
+getrandom = "0.3.4"
 libc = "0.2.189"
 rpassword = "7.5.4"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
+subtle = "2.6.1"
 tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "signal", "sync", "net", "time"] }
 tokio-util = "0.7.19"
 tower-http = { version = "0.7.0", features = ["cors", "fs"] }

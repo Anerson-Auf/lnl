@@ -158,14 +158,12 @@ impl Config {
             let folder_key = id.env_key("FOLDER");
             let folder = value(&folder_key)
                 .or_else(|| global_folder.clone())
-                .ok_or_else(|| eyre!("для сессии «{id}» нужен {folder_key} или общий TG_FOLDER"))?;
+                .unwrap_or_else(|| "all".to_string());
             let folder = folder.trim();
-            if folder.is_empty() {
-                return Err(eyre!("папка сессии «{id}» пустая"));
-            }
             if folder.chars().any(char::is_control) {
                 return Err(eyre!("папка сессии «{id}» содержит управляющие символы"));
             }
+            let folder = if folder.is_empty() { "all" } else { folder };
 
             let file_key = id.env_key("FILE");
             let explicit_file = value(&file_key).or_else(|| {
@@ -575,7 +573,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_unknown_default_and_missing_folder() {
+    fn rejects_unknown_default_and_defaults_missing_folder_to_all() {
         assert!(
             parse(&[
                 ("TG_SESSIONS", "home,work"),
@@ -584,7 +582,11 @@ mod tests {
             ])
             .is_err()
         );
-        assert!(parse(&[("TG_SESSIONS", "home,work")]).is_err());
+        let config = parse(&[("TG_SESSIONS", "home,work")]).unwrap();
+        assert_eq!(config.sessions[0].folder, "all");
+        assert_eq!(config.sessions[1].folder, "all");
+        let config = parse(&[("TG_FOLDER", "  ")]).unwrap();
+        assert_eq!(config.sessions[0].folder, "all");
     }
 
     #[test]

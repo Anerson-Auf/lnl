@@ -18,11 +18,14 @@ pub async fn default_ws_handler<C>(
 where
     C: Send + Sync + 'static,
 {
-    upgrade(
-        ws,
-        state.default_session().events.subscribe(),
-        state.api_shutdown(),
-    )
+    let Some(session) = state.default_session() else {
+        return err(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "основной аккаунт ещё не авторизован",
+        )
+        .into_response();
+    };
+    upgrade(ws, session.events.subscribe(), state.api_shutdown())
 }
 
 pub async fn session_ws_handler<C>(
@@ -34,7 +37,15 @@ where
     C: Send + Sync + 'static,
 {
     let Some(session) = state.session(&session_id) else {
-        return err(StatusCode::NOT_FOUND, format!("нет сессии {session_id}")).into_response();
+        let (status, message) = if state.is_configured(&session_id) {
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                format!("аккаунт {session_id} ещё не авторизован"),
+            )
+        } else {
+            (StatusCode::NOT_FOUND, format!("нет сессии {session_id}"))
+        };
+        return err(status, message).into_response();
     };
     upgrade(ws, session.events.subscribe(), state.api_shutdown())
 }

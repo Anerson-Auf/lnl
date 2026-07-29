@@ -14,6 +14,7 @@ pub struct Message {
 pub struct Dialogue {
     pub title: String,
     pub history: Vec<Message>,
+    pub history_loaded: bool,
 }
 
 impl Dialogue {
@@ -104,6 +105,7 @@ mod tests {
         let mut dialogue = Dialogue {
             title: "chat".to_string(),
             history: Vec::new(),
+            history_loaded: true,
         };
 
         assert!(dialogue.insert_new_message(message(43)));

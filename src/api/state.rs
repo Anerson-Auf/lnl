@@ -3,7 +3,8 @@ use serde::Serialize;
 use std::collections::HashMap;
 use std::future::Future;
 use std::sync::Arc;
-use tokio::sync::broadcast;
+use std::sync::RwLock;
+use tokio::sync::{Mutex, broadcast};
 use tokio_util::sync::CancellationToken;
 
 use crate::config::SessionId;
@@ -23,6 +24,14 @@ pub(crate) trait MessageSender: Send + Sync + 'static {
     ) -> impl Future<Output = Result<SentMessage, String>> + Send;
 }
 
+pub(crate) trait HistoryLoader: Send + Sync + 'static {
+    fn load_history(
+        &self,
+        peer_id: i64,
+        limit: i32,
+    ) -> impl Future<Output = Result<Vec<Message>, String>> + Send;
+}
+
 impl MessageSender for Client {
     async fn send_text(&self, peer_id: i64, text: String) -> Result<SentMessage, String> {
         let sent = self
@@ -36,11 +45,39 @@ impl MessageSender for Client {
     }
 }
 
+impl HistoryLoader for Client {
+    async fn load_history(&self, peer_id: i64, limit: i32) -> Result<Vec<Message>, String> {
+        let page = self
+            .get_message_history(peer_id, limit, 0, 0)
+            .await
+            .map_err(|error| error.to_string())?;
+        let mut history = page
+            .messages
+            .into_iter()
+            .filter_map(|message| {
+                let text = message.text()?;
+                if text.trim().is_empty() {
+                    return None;
+                }
+                Some(Message {
+                    id: message.id(),
+                    text: text.to_string(),
+                    outgoing: message.outgoing(),
+                    date: message.date(),
+                })
+            })
+            .collect::<Vec<_>>();
+        history.reverse();
+        Ok(history)
+    }
+}
+
 pub struct SessionState<C = Client> {
     id: SessionId,
     pub client: Arc<C>,
     pub telegram: Arc<Telegram>,
     pub events: broadcast::Sender<WsEvent>,
+    history_loads: dashmap::DashMap<ChatKey, Arc<Mutex<()>>>,
 }
 
 impl<C> SessionState<C> {
@@ -51,6 +88,7 @@ impl<C> SessionState<C> {
             client,
             telegram,
             events,
+            history_loads: dashmap::DashMap::new(),
         }
     }
 
@@ -72,10 +110,48 @@ impl<C> SessionState<C> {
         });
         true
     }
+
+    pub async fn history(&self, key: ChatKey) -> Result<Option<Vec<Message>>, String>
+    where
+        C: HistoryLoader,
+    {
+        let Some(dialogue) = self.telegram.dialogues.get(&key) else {
+            return Ok(None);
+        };
+        if dialogue.history_loaded {
+            return Ok(Some(dialogue.history.clone()));
+        }
+        drop(dialogue);
+
+        let load = self
+            .history_loads
+            .entry(key)
+            .or_insert_with(|| Arc::new(Mutex::new(())))
+            .clone();
+        let _guard = load.lock().await;
+
+        let Some(dialogue) = self.telegram.dialogues.get(&key) else {
+            return Ok(None);
+        };
+        if dialogue.history_loaded {
+            return Ok(Some(dialogue.history.clone()));
+        }
+        drop(dialogue);
+
+        let messages = self.client.load_history(key.bot_api_id(), 30).await?;
+        let Some(mut dialogue) = self.telegram.dialogues.get_mut(&key) else {
+            return Ok(None);
+        };
+        for message in messages {
+            dialogue.insert_new_message(message);
+        }
+        dialogue.history_loaded = true;
+        Ok(Some(dialogue.history.clone()))
+    }
 }
 
 pub struct AppState<C = Client> {
-    sessions: Arc<HashMap<SessionId, Arc<SessionState<C>>>>,
+    sessions: Arc<RwLock<HashMap<SessionId, Arc<SessionState<C>>>>>,
     order: Arc<Vec<SessionId>>,
     default_session: SessionId,
     api_shutdown: CancellationToken,
@@ -99,14 +175,11 @@ pub struct SessionSummary {
 }
 
 impl<C> AppState<C> {
+    #[cfg(test)]
     pub fn new(
         sessions: Vec<Arc<SessionState<C>>>,
         default_session: SessionId,
     ) -> Result<Self, String> {
-        if sessions.is_empty() {
-            return Err("нужна хотя бы одна Telegram-сессия".to_string());
-        }
-
         let mut registry = HashMap::with_capacity(sessions.len());
         let mut order = Vec::with_capacity(sessions.len());
         for session in sessions {
@@ -116,33 +189,85 @@ impl<C> AppState<C> {
             }
             order.push(id);
         }
-        if !registry.contains_key(&default_session) {
+        if !registry.is_empty() && !registry.contains_key(&default_session) {
             return Err(format!("default-сессия «{default_session}» не настроена"));
         }
 
         Ok(Self {
-            sessions: Arc::new(registry),
+            sessions: Arc::new(RwLock::new(registry)),
             order: Arc::new(order),
             default_session,
             api_shutdown: CancellationToken::new(),
         })
     }
 
-    pub fn session(&self, id: &str) -> Option<Arc<SessionState<C>>> {
-        self.sessions.get(id).cloned()
+    pub fn with_order(
+        sessions: Vec<Arc<SessionState<C>>>,
+        order: Vec<SessionId>,
+        default_session: SessionId,
+    ) -> Result<Self, String> {
+        let mut seen = std::collections::HashSet::with_capacity(order.len());
+        if order.iter().any(|id| !seen.insert(id.clone())) {
+            return Err("повтор id в порядке Telegram-сессий".to_string());
+        }
+        if !order.contains(&default_session) {
+            return Err(format!("default-сессия «{default_session}» не настроена"));
+        }
+
+        let state = Self {
+            sessions: Arc::new(RwLock::new(HashMap::new())),
+            order: Arc::new(order),
+            default_session,
+            api_shutdown: CancellationToken::new(),
+        };
+        for session in sessions {
+            state.insert_session(session)?;
+        }
+        Ok(state)
     }
 
-    pub fn default_session(&self) -> Arc<SessionState<C>> {
-        Arc::clone(
-            self.sessions
-                .get(&self.default_session)
-                .expect("default session is validated during construction"),
-        )
+    pub fn session(&self, id: &str) -> Option<Arc<SessionState<C>>> {
+        self.sessions
+            .read()
+            .expect("session registry lock poisoned")
+            .get(id)
+            .cloned()
+    }
+
+    pub fn is_configured(&self, id: &str) -> bool {
+        self.order
+            .iter()
+            .any(|configured| configured.as_str() == id)
+    }
+
+    pub fn default_session(&self) -> Option<Arc<SessionState<C>>> {
+        self.session(self.default_session.as_str())
+    }
+
+    pub fn insert_session(&self, session: Arc<SessionState<C>>) -> Result<(), String> {
+        let id = session.id().clone();
+        if !self.order.contains(&id) {
+            return Err(format!("сессия «{id}» отсутствует в конфигурации"));
+        }
+        let mut sessions = self
+            .sessions
+            .write()
+            .map_err(|_| "session registry lock poisoned".to_string())?;
+        if sessions.contains_key(&id) {
+            return Err(format!("сессия «{id}» уже готова"));
+        }
+        sessions.insert(id, session);
+        Ok(())
     }
 
     pub fn summaries(&self) -> Vec<SessionSummary> {
+        let sessions = self
+            .sessions
+            .read()
+            .expect("session registry lock poisoned");
         self.order
             .iter()
+            .filter(|id| sessions.contains_key(*id))
             .map(|id| SessionSummary {
                 id: id.clone(),
                 is_default: id == &self.default_session,
@@ -178,6 +303,7 @@ mod tests {
                 Dialogue {
                     title: "first".to_string(),
                     history: Vec::new(),
+                    history_loaded: true,
                 },
             )]
             .into_iter()
@@ -189,6 +315,7 @@ mod tests {
                 Dialogue {
                     title: "second".to_string(),
                     history: Vec::new(),
+                    history_loaded: true,
                 },
             )]
             .into_iter()

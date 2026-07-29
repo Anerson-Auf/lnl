@@ -3,25 +3,25 @@ use color_eyre::{Report, Result};
 use ferogram::{Client, MtProxyConfig, SendCodeOutcome, ShutdownToken, SignInError};
 use std::io::IsTerminal;
 use std::net::SocketAddr;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::task::{JoinHandle, JoinSet};
+use tokio::sync::mpsc;
+use tokio::task::JoinHandle;
 use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 
+use super::accounts::{AccountManager, ManagedAccount};
 use super::handlers::handle_update;
-use super::history::seed_dialogues_from_folder;
 use super::util::prompt;
 use crate::api::{self, AppState, SessionState};
-use crate::config::types::Telegram;
 use crate::config::{CONFIG, Config, SessionConfig, SessionId, log_mtproxy, secure_session_file};
 
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
 
-struct RunningSession {
-    state: Arc<SessionState>,
-    file: PathBuf,
+struct ConnectedAccount {
+    config: SessionConfig,
+    client: Arc<Client>,
     shutdown: ShutdownToken,
 }
 
@@ -43,6 +43,7 @@ fn map_connect_err(error: ferogram::QuickConnectError) -> Report {
 pub async fn init_telegram() -> Result<()> {
     let config = CONFIG.get().expect("config");
     let mtproxy = config.mtproxy()?;
+    let debug_ui = std::env::var("LNL_DEBUG_UI").ok().as_deref() == Some("1");
 
     let bind: SocketAddr = std::env::var("LNL_BIND")
         .unwrap_or_else(|_| "0.0.0.0:8080".into())
@@ -52,86 +53,139 @@ pub async fn init_telegram() -> Result<()> {
         .await
         .wrap_err("не удалось открыть LNL_BIND")?;
 
-    let update_stop = CancellationToken::new();
-    let mut workers = JoinSet::new();
-    let mut sessions = Vec::with_capacity(config.sessions.len());
+    let admin_listener = if debug_ui {
+        let admin_bind: SocketAddr = std::env::var("LNL_ADMIN_BIND")
+            .unwrap_or_else(|_| "127.0.0.1:8081".to_string())
+            .parse()
+            .wrap_err("LNL_ADMIN_BIND")?;
+        api::admin::validate_admin_bind(admin_bind).map_err(|error| eyre!(error))?;
+        let token = std::env::var("LNL_ADMIN_TOKEN")
+            .map_err(|_| eyre!("LNL_DEBUG_UI=1 требует LNL_ADMIN_TOKEN"))?;
+        let token = api::admin::AdminToken::parse(token).map_err(|error| eyre!(error))?;
+        let listener = tokio::net::TcpListener::bind(admin_bind)
+            .await
+            .wrap_err("не удалось открыть LNL_ADMIN_BIND")?;
+        let actual_bind = listener
+            .local_addr()
+            .wrap_err("не удалось определить LNL_ADMIN_BIND")?;
+        let access = api::admin::AdminAccess::new(token, format!("http://{actual_bind}"));
+        Some((listener, actual_bind, access))
+    } else {
+        None
+    };
 
+    let mut connected = Vec::with_capacity(config.sessions.len());
     for session_config in &config.sessions {
-        if let Some(error) = startup_worker_failure(&mut workers) {
-            update_stop.cancel();
-            let mut cleanup_errors = stop_workers(&mut workers).await;
-            cleanup_errors.extend(save_and_cancel(&sessions).await);
-            return Err(with_cleanup(error, cleanup_errors));
-        }
-
-        let running = match connect_session(config, session_config, mtproxy.as_ref()).await {
-            Ok(running) => running,
+        let account = match connect_account(config, session_config, mtproxy.as_ref()).await {
+            Ok(account) => account,
             Err(error) => {
-                update_stop.cancel();
-                let mut cleanup_errors = stop_workers(&mut workers).await;
-                cleanup_errors.extend(save_and_cancel(&sessions).await);
+                let cleanup_errors = save_and_cancel_connected(&connected).await;
                 return Err(with_cleanup(error, cleanup_errors));
             }
         };
-        sessions.push(running);
-
-        if let Some(error) = startup_worker_failure(&mut workers) {
-            update_stop.cancel();
-            let mut cleanup_errors = stop_workers(&mut workers).await;
-            cleanup_errors.extend(save_and_cancel(&sessions).await);
+        if !debug_ui
+            && let Err(error) =
+                ensure_authorized(&account.client, &session_config.id, &session_config.file).await
+        {
+            connected.push(account);
+            let cleanup_errors = save_and_cancel_connected(&connected).await;
             return Err(with_cleanup(error, cleanup_errors));
         }
-
-        let state = Arc::clone(&sessions.last().expect("session was just inserted").state);
-        let stop = update_stop.clone();
-        workers.spawn(run_update_worker(state, stop));
+        connected.push(account);
     }
 
-    let app_state = match AppState::new(
-        sessions
+    let app_state = AppState::with_order(
+        Vec::new(),
+        config
+            .sessions
             .iter()
-            .map(|session| Arc::clone(&session.state))
+            .map(|session| session.id.clone())
             .collect(),
         config.default_session.clone(),
-    ) {
-        Ok(state) => state,
-        Err(error) => {
-            update_stop.cancel();
-            let mut cleanup_errors = stop_workers(&mut workers).await;
-            cleanup_errors.extend(save_and_cancel(&sessions).await);
-            return Err(with_cleanup(eyre!(error), cleanup_errors));
-        }
-    };
-    let api_stop = app_state.api_shutdown();
-    let mut api_task = tokio::spawn(api::serve(app_state, listener, bind));
+    )
+    .map_err(|error| eyre!(error))?;
+    let update_stop = CancellationToken::new();
+    let (worker_tx, mut worker_rx) = mpsc::unbounded_channel();
+    let manager = AccountManager::new(
+        connected
+            .into_iter()
+            .map(|account| {
+                Arc::new(ManagedAccount::new(
+                    account.config,
+                    account.client,
+                    account.shutdown,
+                ))
+            })
+            .collect(),
+        config.default_session.clone(),
+        app_state.clone(),
+        update_stop,
+        worker_tx,
+    )
+    .map_err(|error| eyre!(error))?;
+    if let Err(error) = manager.bootstrap().await {
+        let cleanup_errors = manager.shutdown().await;
+        return Err(with_cleanup(
+            eyre!("Telegram account bootstrap failed: {}", error.message),
+            cleanup_errors,
+        ));
+    }
 
+    let api_stop = app_state.api_shutdown();
+    let mut public_api_task = tokio::spawn(api::serve_public(app_state.clone(), listener, bind));
+    let mut admin_api_task = admin_listener.map(|(listener, admin_bind, access)| {
+        tokio::spawn(api::serve_admin(
+            app_state.clone(),
+            Arc::clone(&manager),
+            access,
+            listener,
+            admin_bind,
+        ))
+    });
+
+    let ready = manager
+        .summaries()
+        .await
+        .into_iter()
+        .filter(|account| account.status == "ready")
+        .count();
     println!(
-        "Waiting for messages in {} session(s)... (Ctrl+C to quit)",
-        sessions.len()
+        "Waiting for messages in {ready}/{} session(s)... (Ctrl+C to quit)",
+        config.sessions.len()
     );
-    let mut api_finished = false;
+    let mut public_finished = false;
+    let mut admin_finished = false;
     let primary_error = tokio::select! {
         signal = tokio::signal::ctrl_c() => {
             signal.err().map(|error| eyre!("Ctrl+C handler failed: {error}"))
         }
-        result = &mut api_task => {
-            api_finished = true;
+        result = &mut public_api_task => {
+            public_finished = true;
             Some(api_exit_error(result))
         }
-        result = workers.join_next() => {
+        result = async {
+            match admin_api_task.as_mut() {
+                Some(task) => Some(task.await),
+                None => std::future::pending().await,
+            }
+        } => {
+            admin_finished = true;
+            Some(api_exit_error(result.expect("admin task exists")))
+        }
+        result = worker_rx.recv() => {
             Some(worker_exit_error(result))
         }
     };
 
     api_stop.cancel();
     let mut cleanup_errors = Vec::new();
-    if !api_finished {
-        cleanup_errors.extend(stop_api(&mut api_task).await);
+    if !public_finished {
+        cleanup_errors.extend(stop_api(&mut public_api_task).await);
     }
-
-    update_stop.cancel();
-    cleanup_errors.extend(stop_workers(&mut workers).await);
-    cleanup_errors.extend(save_and_cancel(&sessions).await);
+    if !admin_finished && let Some(task) = admin_api_task.as_mut() {
+        cleanup_errors.extend(stop_api(task).await);
+    }
+    cleanup_errors.extend(manager.shutdown().await);
 
     match primary_error {
         Some(error) => Err(with_cleanup(error, cleanup_errors)),
@@ -143,11 +197,11 @@ pub async fn init_telegram() -> Result<()> {
     }
 }
 
-async fn connect_session(
+async fn connect_account(
     config: &Config,
     session_config: &SessionConfig,
     mtproxy: Option<&MtProxyConfig>,
-) -> Result<RunningSession> {
+) -> Result<ConnectedAccount> {
     println!(
         "[session:{}] file: {}",
         session_config.id,
@@ -185,63 +239,17 @@ async fn connect_session(
         .await
         .map_err(map_connect_err)
         .wrap_err_with(|| format!("session «{}»: connect", session_config.id))?;
-    let client = Arc::new(client);
-
-    let setup = async {
-        ensure_authorized(&client, &session_config.id, &session_config.file).await?;
-        secure_session_file(&session_config.file)?;
-
-        let telegram = Arc::new(Telegram {
-            dialogues: dashmap::DashMap::new(),
-        });
-        println!(
-            "[session:{}] Seeding folder «{}»…",
-            session_config.id, session_config.folder
-        );
-        seed_dialogues_from_folder(&client, &telegram, &session_config.folder, 30)
-            .await
-            .wrap_err_with(|| format!("session «{}»: seed folder", session_config.id))?;
-        println!(
-            "[session:{}] Loaded {} dialogues from «{}»",
-            session_config.id,
-            telegram.dialogues.len(),
-            session_config.folder
-        );
-
-        Ok(Arc::new(SessionState::new(
-            session_config.id.clone(),
-            Arc::clone(&client),
-            telegram,
-        )))
-    }
-    .await;
-
-    match setup {
-        Ok(state) => Ok(RunningSession {
-            state,
-            file: session_config.file.clone(),
-            shutdown,
-        }),
-        Err(error) => {
-            let mut cleanup_errors = Vec::new();
-            if let Err(save_error) = client.save_session().await {
-                cleanup_errors.push(format!(
-                    "session «{}»: save after startup failure: {save_error}",
-                    session_config.id
-                ));
-            } else if let Err(permission_error) = secure_session_file(&session_config.file) {
-                cleanup_errors.push(format!(
-                    "session «{}»: protect session file: {permission_error:#}",
-                    session_config.id
-                ));
-            }
-            shutdown.cancel();
-            Err(with_cleanup(error, cleanup_errors))
-        }
-    }
+    Ok(ConnectedAccount {
+        config: session_config.clone(),
+        client: Arc::new(client),
+        shutdown,
+    })
 }
 
-async fn run_update_worker(state: Arc<SessionState>, stop: CancellationToken) -> Result<SessionId> {
+pub(crate) async fn run_update_worker(
+    state: Arc<SessionState>,
+    stop: CancellationToken,
+) -> Result<SessionId> {
     let session_id = state.id().clone();
     let mut updates = state.client.stream_updates();
 
@@ -338,54 +346,25 @@ async fn stop_api(api_task: &mut JoinHandle<Result<()>>) -> Vec<String> {
     }
 }
 
-async fn stop_workers(workers: &mut JoinSet<Result<SessionId>>) -> Vec<String> {
-    match timeout(SHUTDOWN_TIMEOUT, drain_workers(workers, false)).await {
-        Ok(errors) => errors,
-        Err(_) => {
-            workers.abort_all();
-            let mut errors =
-                vec!["Telegram update workers не остановились за 5 секунд".to_string()];
-            errors.extend(drain_workers(workers, true).await);
-            errors
-        }
-    }
-}
-
-async fn drain_workers(
-    workers: &mut JoinSet<Result<SessionId>>,
-    ignore_cancelled: bool,
-) -> Vec<String> {
-    let mut errors = Vec::new();
-    while let Some(result) = workers.join_next().await {
-        match result {
-            Ok(Ok(_)) => {}
-            Ok(Err(error)) => errors.push(format!("update worker: {error:#}")),
-            Err(error) if ignore_cancelled && error.is_cancelled() => {}
-            Err(error) => errors.push(format!("update worker task: {error}")),
-        }
-    }
-    errors
-}
-
-async fn save_and_cancel(sessions: &[RunningSession]) -> Vec<String> {
-    if !sessions.is_empty() {
-        println!("Saving {} Telegram session(s)...", sessions.len());
+async fn save_and_cancel_connected(accounts: &[ConnectedAccount]) -> Vec<String> {
+    if !accounts.is_empty() {
+        println!("Saving {} Telegram session(s)...", accounts.len());
     }
     let mut errors = Vec::new();
-    for session in sessions {
-        if let Err(error) = session.state.client.save_session().await {
-            errors.push(format!("session «{}»: save: {error}", session.state.id()));
+    for account in accounts {
+        if let Err(error) = account.client.save_session().await {
+            errors.push(format!("session «{}»: save: {error}", account.config.id));
             continue;
         }
-        if let Err(error) = secure_session_file(&session.file) {
+        if let Err(error) = secure_session_file(&account.config.file) {
             errors.push(format!(
                 "session «{}»: protect file: {error:#}",
-                session.state.id()
+                account.config.id
             ));
         }
     }
-    for session in sessions {
-        session.shutdown.cancel();
+    for account in accounts {
+        account.shutdown.cancel();
     }
     errors
 }
@@ -398,23 +377,14 @@ fn api_exit_error(result: std::result::Result<Result<()>, tokio::task::JoinError
     }
 }
 
-fn worker_exit_error(
-    result: Option<std::result::Result<Result<SessionId>, tokio::task::JoinError>>,
-) -> Report {
+fn worker_exit_error(result: Option<std::result::Result<SessionId, String>>) -> Report {
     match result {
-        Some(Ok(Ok(session_id))) => {
+        Some(Ok(session_id)) => {
             eyre!("update worker stopped unexpectedly: session «{session_id}»")
         }
-        Some(Ok(Err(error))) => error,
-        Some(Err(error)) => eyre!("update worker task failed: {error}"),
-        None => eyre!("all update workers stopped unexpectedly"),
+        Some(Err(error)) => eyre!("update worker failed: {error}"),
+        None => eyre!("update worker supervisor stopped unexpectedly"),
     }
-}
-
-fn startup_worker_failure(workers: &mut JoinSet<Result<SessionId>>) -> Option<Report> {
-    workers
-        .try_join_next()
-        .map(|result| worker_exit_error(Some(result)))
 }
 
 fn with_cleanup(error: Report, cleanup_errors: Vec<String>) -> Report {

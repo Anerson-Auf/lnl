@@ -1,23 +1,27 @@
+pub(crate) mod admin;
 mod routes;
 mod state;
 mod ws;
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use axum::Router;
+use axum::middleware;
 use axum::routing::get;
 use color_eyre::Result;
 use ferogram::Client;
 use tower_http::cors::CorsLayer;
 use tower_http::services::ServeDir;
 
-use state::MessageSender;
+use crate::tg::accounts::AccountManager;
 pub use state::{AppState, SessionState};
+use state::{HistoryLoader, MessageSender};
 
 fn api_router<C>(state: AppState<C>) -> Router
 where
-    C: MessageSender,
+    C: MessageSender + HistoryLoader,
 {
     Router::new()
         .route("/api/sessions", get(routes::list_sessions::<C>))
@@ -42,26 +46,37 @@ where
         .with_state(state)
 }
 
-pub async fn serve(
+pub async fn serve_public(
     state: AppState<Client>,
     listener: tokio::net::TcpListener,
     bind: SocketAddr,
 ) -> Result<()> {
     let shutdown = state.api_shutdown();
-    let api = api_router(state);
+    let app = api_router(state).layer(CorsLayer::permissive());
+    println!("API: http://{bind}/api/…  WS: ws://{bind}/ws  (клиент = Android)");
 
-    let app = if std::env::var("LNL_DEBUG_UI").ok().as_deref() == Some("1") {
-        let static_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("static");
-        println!("Debug UI: http://{bind}/  (LNL_DEBUG_UI=1)");
-        Router::new()
-            .merge(api)
-            .fallback_service(ServeDir::new(static_dir).append_index_html_on_directories(true))
-            .layer(CorsLayer::permissive())
-    } else {
-        println!("API: http://{bind}/api/…  WS: ws://{bind}/ws  (клиент = Android)");
-        api.layer(CorsLayer::permissive())
-    };
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown.cancelled_owned())
+        .await?;
+    Ok(())
+}
 
+pub async fn serve_admin(
+    state: AppState<Client>,
+    manager: Arc<AccountManager>,
+    access: admin::AdminAccess,
+    listener: tokio::net::TcpListener,
+    bind: SocketAddr,
+) -> Result<()> {
+    let shutdown = state.api_shutdown();
+    let static_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("static");
+    let app = Router::new()
+        .merge(api_router(state))
+        .merge(admin::router(manager, access))
+        .fallback_service(ServeDir::new(static_dir).append_index_html_on_directories(true))
+        .layer(middleware::from_fn(admin::security_headers));
+
+    println!("Account UI: http://{bind}/  (loopback only)");
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown.cancelled_owned())
         .await?;
@@ -70,7 +85,7 @@ pub async fn serve(
 
 #[cfg(test)]
 mod tests {
-    use super::state::{MessageSender, SentMessage};
+    use super::state::{HistoryLoader, MessageSender, SentMessage};
     use super::{AppState, SessionState, api_router};
     use crate::config::types::{ChatKey, Dialogue, Message, Telegram};
     use axum::body::{Body, to_bytes};
@@ -82,6 +97,8 @@ mod tests {
     #[derive(Default)]
     struct FakeClient {
         sent: Mutex<Vec<(i64, String)>>,
+        history: Mutex<Vec<Message>>,
+        history_loads: Mutex<usize>,
         fail: bool,
     }
 
@@ -89,6 +106,8 @@ mod tests {
         fn failing() -> Self {
             Self {
                 sent: Mutex::new(Vec::new()),
+                history: Mutex::new(Vec::new()),
+                history_loads: Mutex::new(0),
                 fail: true,
             }
         }
@@ -104,6 +123,13 @@ mod tests {
         }
     }
 
+    impl HistoryLoader for FakeClient {
+        async fn load_history(&self, _peer_id: i64, _limit: i32) -> Result<Vec<Message>, String> {
+            *self.history_loads.lock().unwrap() += 1;
+            Ok(self.history.lock().unwrap().clone())
+        }
+    }
+
     fn telegram(title: &str, text: &str) -> Arc<Telegram> {
         Arc::new(Telegram {
             dialogues: [(
@@ -116,6 +142,7 @@ mod tests {
                         outgoing: false,
                         date: 1,
                     }],
+                    history_loaded: true,
                 },
             )]
             .into_iter()
@@ -347,5 +374,148 @@ mod tests {
                 {"id": "work", "is_default": false}
             ])
         );
+    }
+
+    #[tokio::test]
+    async fn configured_but_unready_accounts_never_fall_back() {
+        let state = AppState::<FakeClient>::with_order(
+            Vec::new(),
+            vec!["default".parse().unwrap(), "work".parse().unwrap()],
+            "default".parse().unwrap(),
+        )
+        .unwrap();
+        let app = api_router(state);
+
+        let sessions = app
+            .clone()
+            .oneshot(Request::get("/api/sessions").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(sessions.status(), StatusCode::OK);
+        assert_eq!(body(sessions).await, b"[]");
+
+        for path in ["/api/chats", "/api/sessions/work/chats"] {
+            let response = app
+                .clone()
+                .oneshot(Request::get(path).body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+        }
+        let missing = app
+            .clone()
+            .oneshot(
+                Request::get("/api/sessions/missing/chats")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(missing.status(), StatusCode::NOT_FOUND);
+
+        let admin = app
+            .oneshot(
+                Request::get("/api/admin/accounts")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(admin.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn ready_inventory_keeps_config_order() {
+        let state = AppState::<FakeClient>::with_order(
+            Vec::new(),
+            vec![
+                "default".parse().unwrap(),
+                "work".parse().unwrap(),
+                "third".parse().unwrap(),
+            ],
+            "default".parse().unwrap(),
+        )
+        .unwrap();
+        state
+            .insert_session(Arc::new(SessionState::new(
+                "work".parse().unwrap(),
+                Arc::new(FakeClient::default()),
+                telegram("Work", "work"),
+            )))
+            .unwrap();
+        state
+            .insert_session(Arc::new(SessionState::new(
+                "default".parse().unwrap(),
+                Arc::new(FakeClient::default()),
+                telegram("Home", "home"),
+            )))
+            .unwrap();
+
+        let response = api_router(state)
+            .oneshot(Request::get("/api/sessions").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        let json: Value = serde_json::from_slice(&body(response).await).unwrap();
+        assert_eq!(
+            json,
+            serde_json::json!([
+                {"id": "default", "is_default": true},
+                {"id": "work", "is_default": false}
+            ])
+        );
+    }
+
+    #[tokio::test]
+    async fn all_dialog_history_is_loaded_once_on_first_open() {
+        let client = Arc::new(FakeClient::default());
+        client.history.lock().unwrap().extend([
+            Message {
+                id: 1,
+                text: "older".to_string(),
+                outgoing: false,
+                date: 1,
+            },
+            Message {
+                id: 2,
+                text: "newer".to_string(),
+                outgoing: true,
+                date: 2,
+            },
+        ]);
+        let telegram = Arc::new(Telegram {
+            dialogues: [(
+                ChatKey::User(1),
+                Dialogue {
+                    title: "Lazy".to_string(),
+                    history: Vec::new(),
+                    history_loaded: false,
+                },
+            )]
+            .into_iter()
+            .collect(),
+        });
+        let state = AppState::new(
+            vec![Arc::new(SessionState::new(
+                "default".parse().unwrap(),
+                Arc::clone(&client),
+                telegram,
+            ))],
+            "default".parse().unwrap(),
+        )
+        .unwrap();
+        let app = api_router(state);
+
+        for _ in 0..2 {
+            let response = app
+                .clone()
+                .oneshot(Request::get("/api/messages/1").body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            let messages: Value = serde_json::from_slice(&body(response).await).unwrap();
+            assert_eq!(messages[0]["text"], "older");
+            assert_eq!(messages[1]["text"], "newer");
+        }
+        assert_eq!(*client.history_loads.lock().unwrap(), 1);
     }
 }

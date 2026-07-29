@@ -5,6 +5,12 @@ use std::collections::HashSet;
 
 use crate::config::types::{ChatKey, Dialogue, Message, Telegram};
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DialogSeed {
+    Folder,
+    All,
+}
+
 fn text_of(title: &tl::enums::TextWithEntities) -> &str {
     match title {
         tl::enums::TextWithEntities::TextWithEntities(t) => t.text.as_str(),
@@ -24,30 +30,6 @@ fn chat_key_from_input(peer: &tl::enums::InputPeer) -> Option<ChatKey> {
         tl::enums::InputPeer::ChannelFromMessage(c) => Some(ChatKey::Channel(c.channel_id)),
         tl::enums::InputPeer::PeerSelf | tl::enums::InputPeer::Empty => None,
     }
-}
-
-pub async fn list_folders(client: &Client) -> Result<Vec<(i32, String)>> {
-    let resp = client
-        .invoke(&tl::functions::messages::GetDialogFilters {})
-        .await
-        .map_err(|e| eyre!("{e}"))?;
-
-    let tl::enums::messages::DialogFilters::DialogFilters(df) = resp;
-    let mut out = Vec::new();
-    for f in df.filters {
-        match f {
-            tl::enums::DialogFilter::DialogFilter(f) => {
-                out.push((f.id, text_of(&f.title).to_string()));
-            }
-            tl::enums::DialogFilter::Chatlist(f) => {
-                out.push((f.id, text_of(&f.title).to_string()));
-            }
-            tl::enums::DialogFilter::Default => {
-                out.push((0, "All chats".to_string()));
-            }
-        }
-    }
-    Ok(out)
 }
 
 fn peers_from_filter(f: &tl::enums::DialogFilter) -> Vec<tl::enums::InputPeer> {
@@ -88,52 +70,51 @@ async fn peer_title(client: &Client, _input: &tl::enums::InputPeer, key: ChatKey
     format!("{}", key.bot_api_id())
 }
 
-pub async fn seed_dialogues_from_folder(
+pub async fn seed_dialogues_or_all(
     client: &Client,
     telegram: &Telegram,
     folder_name: &str,
     per_chat: i32,
-) -> Result<()> {
+) -> Result<DialogSeed> {
     let folder_name = folder_name.trim();
-    if folder_name.is_empty() {
-        return Err(eyre!("TG_FOLDER пуст — укажи имя папки Telegram"));
-    }
-
     let resp = client
         .invoke(&tl::functions::messages::GetDialogFilters {})
         .await
         .map_err(|e| eyre!("{e}"))?;
-
     let tl::enums::messages::DialogFilters::DialogFilters(df) = resp;
 
-    let filter = df.filters.into_iter().find(|f| match f {
-        tl::enums::DialogFilter::DialogFilter(f) => {
-            same_folder_name(text_of(&f.title), folder_name)
-        }
-        tl::enums::DialogFilter::Chatlist(f) => same_folder_name(text_of(&f.title), folder_name),
-        tl::enums::DialogFilter::Default => {
-            same_folder_name(folder_name, "all chats") || same_folder_name(folder_name, "all")
-        }
-    });
+    let peers = df
+        .filters
+        .into_iter()
+        .find(|filter| match filter {
+            tl::enums::DialogFilter::DialogFilter(filter) => {
+                same_folder_name(text_of(&filter.title), folder_name)
+            }
+            tl::enums::DialogFilter::Chatlist(filter) => {
+                same_folder_name(text_of(&filter.title), folder_name)
+            }
+            tl::enums::DialogFilter::Default => {
+                same_folder_name(folder_name, "all chats") || same_folder_name(folder_name, "all")
+            }
+        })
+        .map(|filter| peers_from_filter(&filter))
+        .unwrap_or_default();
 
-    let Some(filter) = filter else {
-        let names = list_folders(client)
-            .await?
-            .into_iter()
-            .map(|(_, n)| format!("«{n}»"))
-            .collect::<Vec<_>>()
-            .join(", ");
-        return Err(eyre!("папка «{folder_name}» не найдена. Есть: {names}"));
-    };
-
-    let peers = peers_from_filter(&filter);
     if peers.is_empty() {
-        return Err(eyre!(
-            "папка «{folder_name}» пустая (нет include/pinned peers). \
-             Добавь чаты вручную в папку."
-        ));
+        seed_all_dialogues(client, telegram).await?;
+        return Ok(DialogSeed::All);
     }
 
+    seed_dialogues_from_peers(client, telegram, peers, per_chat).await?;
+    Ok(DialogSeed::Folder)
+}
+
+async fn seed_dialogues_from_peers(
+    client: &Client,
+    telegram: &Telegram,
+    peers: Vec<tl::enums::InputPeer>,
+    per_chat: i32,
+) -> Result<()> {
     let mut seen = HashSet::new();
     for input in peers {
         let Some(key) = chat_key_from_input(&input) else {
@@ -147,32 +128,80 @@ pub async fn seed_dialogues_from_folder(
             .get_message_history(input.clone(), per_chat, 0, 0)
             .await
             .map_err(|e| eyre!("история {key:?}: {e}"))?;
-
-        let mut history: Vec<Message> = page
+        let mut history = page
             .messages
             .into_iter()
-            .filter_map(|m| {
-                let text = m.text()?;
-                if text.trim().is_empty() {
-                    return None;
-                }
-                Some(Message {
-                    id: m.id(),
+            .filter_map(|message| {
+                let text = message.text()?.trim();
+                (!text.is_empty()).then(|| Message {
+                    id: message.id(),
                     text: text.to_string(),
-                    outgoing: m.outgoing(),
-                    date: m.date(),
+                    outgoing: message.outgoing(),
+                    date: message.date(),
                 })
             })
-            .collect();
-        // Telegram отдаёт новые первыми — для UI старые сверху.
+            .collect::<Vec<_>>();
         history.reverse();
 
-        let title = peer_title(client, &input, key).await;
-
-        telegram.dialogues.insert(key, Dialogue { title, history });
+        telegram.dialogues.insert(
+            key,
+            Dialogue {
+                title: peer_title(client, &input, key).await,
+                history,
+                history_loaded: true,
+            },
+        );
     }
-
     Ok(())
+}
+
+async fn seed_all_dialogues(client: &Client, telegram: &Telegram) -> Result<()> {
+    let mut dialogs = client.iter_dialogs();
+    let mut seen = HashSet::new();
+
+    while let Some(dialog) = dialogs.next(client).await.map_err(|e| eyre!("{e}"))? {
+        let Some(peer) = dialog.peer() else {
+            continue;
+        };
+        let Some(key) = ChatKey::from_peer(peer) else {
+            continue;
+        };
+        if !seen.insert(key) {
+            continue;
+        }
+
+        let history = dialog
+            .message
+            .as_ref()
+            .and_then(message_from_raw)
+            .into_iter()
+            .collect();
+        telegram.dialogues.insert(
+            key,
+            Dialogue {
+                title: dialog.title(),
+                history,
+                history_loaded: false,
+            },
+        );
+    }
+    Ok(())
+}
+
+fn message_from_raw(message: &tl::enums::Message) -> Option<Message> {
+    let tl::enums::Message::Message(message) = message else {
+        return None;
+    };
+    let text = message.message.trim();
+    if text.is_empty() {
+        return None;
+    }
+    Some(Message {
+        id: message.id,
+        text: text.to_string(),
+        outgoing: message.out,
+        date: message.date,
+    })
 }
 
 #[cfg(test)]
