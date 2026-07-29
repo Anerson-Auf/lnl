@@ -4,11 +4,12 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::sync::Arc;
 use std::sync::RwLock;
-use tokio::sync::{Mutex, broadcast};
+use tokio::sync::{Mutex, OwnedSemaphorePermit, Semaphore, broadcast};
 use tokio_util::sync::CancellationToken;
 
 use crate::config::SessionId;
 use crate::config::types::{ChatKey, Message, Telegram, WsEvent};
+use crate::tg::media::message_from_incoming;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct SentMessage {
@@ -54,18 +55,7 @@ impl HistoryLoader for Client {
         let mut history = page
             .messages
             .into_iter()
-            .filter_map(|message| {
-                let text = message.text()?;
-                if text.trim().is_empty() {
-                    return None;
-                }
-                Some(Message {
-                    id: message.id(),
-                    text: text.to_string(),
-                    outgoing: message.outgoing(),
-                    date: message.date(),
-                })
-            })
+            .filter_map(|message| message_from_incoming(&message))
             .collect::<Vec<_>>();
         history.reverse();
         Ok(history)
@@ -78,6 +68,8 @@ pub struct SessionState<C = Client> {
     pub telegram: Arc<Telegram>,
     pub events: broadcast::Sender<WsEvent>,
     history_loads: dashmap::DashMap<ChatKey, Arc<Mutex<()>>>,
+    upload_lock: Mutex<()>,
+    download_limit: Arc<Semaphore>,
 }
 
 impl<C> SessionState<C> {
@@ -89,6 +81,8 @@ impl<C> SessionState<C> {
             telegram,
             events,
             history_loads: dashmap::DashMap::new(),
+            upload_lock: Mutex::new(()),
+            download_limit: Arc::new(Semaphore::new(3)),
         }
     }
 
@@ -109,6 +103,29 @@ impl<C> SessionState<C> {
             message,
         });
         true
+    }
+
+    pub fn record_chat_pinned(&self, key: ChatKey, pinned: bool) -> bool {
+        let Some(mut dialogue) = self.telegram.dialogues.get_mut(&key) else {
+            return false;
+        };
+        if dialogue.pinned == Some(pinned) {
+            return false;
+        }
+        dialogue.pinned = Some(pinned);
+        let _ = self.events.send(WsEvent::ChatPinned {
+            peer_id: key.bot_api_id(),
+            pinned,
+        });
+        true
+    }
+
+    pub async fn lock_upload(&self) -> tokio::sync::MutexGuard<'_, ()> {
+        self.upload_lock.lock().await
+    }
+
+    pub fn try_download_permit(&self) -> Option<OwnedSemaphorePermit> {
+        Arc::clone(&self.download_limit).try_acquire_owned().ok()
     }
 
     pub async fn history(&self, key: ChatKey) -> Result<Option<Vec<Message>>, String>
@@ -283,7 +300,7 @@ impl<C> AppState<C> {
 #[cfg(test)]
 mod tests {
     use super::{AppState, SessionState};
-    use crate::config::types::{ChatKey, Dialogue, Message, Telegram};
+    use crate::config::types::{ChatKey, Dialogue, Message, Telegram, WsEvent};
     use std::sync::Arc;
 
     fn message(text: &str) -> Message {
@@ -292,6 +309,7 @@ mod tests {
             text: text.to_string(),
             outgoing: false,
             date: 0,
+            media: None,
         }
     }
 
@@ -304,6 +322,7 @@ mod tests {
                     title: "first".to_string(),
                     history: Vec::new(),
                     history_loaded: true,
+                    pinned: None,
                 },
             )]
             .into_iter()
@@ -316,6 +335,7 @@ mod tests {
                     title: "second".to_string(),
                     history: Vec::new(),
                     history_loaded: true,
+                    pinned: None,
                 },
             )]
             .into_iter()
@@ -357,6 +377,26 @@ mod tests {
 
         assert!(!first.record_message(ChatKey::User(1), message("duplicate")));
         assert!(first_events.try_recv().is_err());
+
+        assert!(first.record_chat_pinned(ChatKey::User(1), true));
+        assert_eq!(
+            first_telegram
+                .dialogues
+                .get(&ChatKey::User(1))
+                .unwrap()
+                .pinned,
+            Some(true)
+        );
+        assert!(matches!(
+            first_events.try_recv(),
+            Ok(WsEvent::ChatPinned {
+                peer_id: 1,
+                pinned: true
+            })
+        ));
+        assert!(!first.record_chat_pinned(ChatKey::User(1), true));
+        assert!(first_events.try_recv().is_err());
+        assert!(second_events.try_recv().is_err());
     }
 
     #[test]

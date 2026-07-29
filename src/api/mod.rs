@@ -1,4 +1,5 @@
 pub(crate) mod admin;
+mod media;
 mod routes;
 mod state;
 mod ws;
@@ -71,8 +72,9 @@ pub async fn serve_admin(
     let shutdown = state.api_shutdown();
     let static_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("static");
     let app = Router::new()
-        .merge(api_router(state))
-        .merge(admin::router(manager, access))
+        .merge(api_router(state.clone()))
+        .merge(admin::router(manager, access.clone()))
+        .merge(media::router(state, access))
         .fallback_service(ServeDir::new(static_dir).append_index_html_on_directories(true))
         .layer(middleware::from_fn(admin::security_headers));
 
@@ -141,8 +143,10 @@ mod tests {
                         text: text.to_string(),
                         outgoing: false,
                         date: 1,
+                        media: None,
                     }],
                     history_loaded: true,
+                    pinned: None,
                 },
             )]
             .into_iter()
@@ -425,6 +429,29 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn public_router_never_exposes_admin_media_or_pin_routes() {
+        let (state, _, _) = state();
+        for path in [
+            "/api/admin/sessions/default/messages/1/42/media",
+            "/api/admin/sessions/default/chats/1/pin",
+        ] {
+            for method in ["GET", "POST", "PUT", "DELETE"] {
+                let response = api_router(state.clone())
+                    .oneshot(
+                        Request::builder()
+                            .method(method)
+                            .uri(path)
+                            .body(Body::empty())
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap();
+                assert_eq!(response.status(), StatusCode::NOT_FOUND);
+            }
+        }
+    }
+
+    #[tokio::test]
     async fn ready_inventory_keeps_config_order() {
         let state = AppState::<FakeClient>::with_order(
             Vec::new(),
@@ -474,12 +501,14 @@ mod tests {
                 text: "older".to_string(),
                 outgoing: false,
                 date: 1,
+                media: None,
             },
             Message {
                 id: 2,
                 text: "newer".to_string(),
                 outgoing: true,
                 date: 2,
+                media: None,
             },
         ]);
         let telegram = Arc::new(Telegram {
@@ -489,6 +518,7 @@ mod tests {
                     title: "Lazy".to_string(),
                     history: Vec::new(),
                     history_loaded: false,
+                    pinned: None,
                 },
             )]
             .into_iter()
