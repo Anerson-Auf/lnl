@@ -85,25 +85,29 @@ pub async fn init_telegram() -> Result<()> {
         .wrap_err("не удалось открыть LNL_BIND")?;
 
     let api_state = (*state).clone();
-    let api_task = tokio::spawn(async move {
-        if let Err(e) = api::serve(api_state, listener, bind).await {
-            eprintln!("API error: {e:#}");
-        }
-    });
+    let mut api_task = tokio::spawn(api::serve(api_state, listener, bind));
 
     let mut stream = client.stream_updates();
 
     println!("Waiting for messages... (Ctrl+C to quit)");
-    loop {
+    let api_error = loop {
         tokio::select! {
-            _ = tokio::signal::ctrl_c() => break,
+            _ = tokio::signal::ctrl_c() => break None,
+            result = &mut api_task => {
+                let error = match result {
+                    Ok(Ok(())) => color_eyre::eyre::eyre!("API server stopped unexpectedly"),
+                    Ok(Err(error)) => color_eyre::eyre::eyre!("API server stopped: {error:#}"),
+                    Err(error) => color_eyre::eyre::eyre!("API task failed: {error}"),
+                };
+                break Some(error);
+            }
             upd = stream.next() => {
-                let Some(upd) = upd else { break };
+                let Some(upd) = upd else { break None };
                 let s = Arc::clone(&state);
                 handle_update(s, upd).await;
             }
         }
-    }
+    };
 
     println!("Saving session...");
     client
@@ -113,7 +117,10 @@ pub async fn init_telegram() -> Result<()> {
     shutdown.cancel();
     api_task.abort();
 
-    Ok(())
+    match api_error {
+        Some(error) => Err(error),
+        None => Ok(()),
+    }
 }
 
 async fn ensure_authorized(client: &Client) -> Result<()> {
