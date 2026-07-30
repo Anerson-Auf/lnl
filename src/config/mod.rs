@@ -458,6 +458,7 @@ mod tests {
     #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
     use std::path::Path;
+    #[cfg(unix)]
     use std::sync::atomic::{AtomicU64, Ordering};
 
     fn parse_at(values: &[(&str, &str)], cwd: &Path) -> color_eyre::Result<Config> {
@@ -470,8 +471,10 @@ mod tests {
         parse_at(values, Path::new("/srv/lnl"))
     }
 
+    #[cfg(unix)]
     struct TestDir(std::path::PathBuf);
 
+    #[cfg(unix)]
     impl TestDir {
         fn new(label: &str) -> Self {
             static NEXT: AtomicU64 = AtomicU64::new(0);
@@ -485,6 +488,7 @@ mod tests {
         }
     }
 
+    #[cfg(unix)]
     impl Drop for TestDir {
         fn drop(&mut self) {
             let _ = std::fs::remove_dir_all(&self.0);
