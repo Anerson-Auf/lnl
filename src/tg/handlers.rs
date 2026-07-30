@@ -1,10 +1,8 @@
-use ferogram::update::Update;
-use std::sync::Arc;
-
-use crate::api::AppState;
+use crate::api::SessionState;
 use crate::config::types::{ChatKey, Message};
+use ferogram::update::Update;
 
-pub async fn handle_update(state: Arc<AppState>, update: Update) {
+pub async fn handle_update(state: &SessionState, update: Update) {
     let Update::NewMessage(msg) = update else {
         return;
     };

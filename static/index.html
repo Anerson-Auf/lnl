@@ -3,299 +3,1909 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>LNL</title>
+  <meta name="color-scheme" content="dark" />
+  <meta name="referrer" content="same-origin" />
+  <title>LNL — Telegram relay</title>
   <style>
     :root {
-      --bg: #0f1419;
-      --panel: #1a222c;
-      --line: #2a3542;
-      --text: #e7ecf1;
-      --muted: #8b9aab;
-      --accent: #3d8bfd;
-      --out: #1e3a2f;
-      --in: #243041;
+      color-scheme: dark;
+      --page: #0e151c;
+      --sidebar: #17212b;
+      --surface: #202b36;
+      --surface-hover: #283848;
+      --surface-active: #2d4052;
+      --field: #111a22;
+      --line: #2a3947;
+      --line-strong: #405364;
+      --text: #f2f5f7;
+      --muted: #91a3b5;
+      --faint: #66798b;
+      --accent: #3390ec;
+      --accent-hover: #45a0f5;
+      --danger: #f06b72;
+      --success: #4bc791;
+      --warning: #f3b75b;
+      --incoming: #202f3d;
+      --outgoing: #2b5278;
+      --shadow: 0 18px 60px rgb(0 0 0 / 0.42);
+      --sidebar-width: 352px;
     }
+
     * { box-sizing: border-box; }
-    html, body { height: 100%; margin: 0; }
+    html, body { width: 100%; height: 100%; margin: 0; }
+    [hidden] { display: none !important; }
+
     body {
-      font-family: "Segoe UI", system-ui, sans-serif;
-      background: var(--bg);
-      color: var(--text);
+      min-height: 100dvh;
+      overflow: hidden;
       display: grid;
-      grid-template-columns: minmax(220px, 320px) 1fr;
+      grid-template-columns: minmax(280px, var(--sidebar-width)) minmax(0, 1fr);
+      background: var(--page);
+      color: var(--text);
+      font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 15px;
+      line-height: 1.4;
     }
-    @media (max-width: 720px) {
+
+    button, input, textarea { font: inherit; }
+    button { -webkit-tap-highlight-color: transparent; }
+    button:disabled, input:disabled, textarea:disabled {
+      cursor: not-allowed;
+      opacity: 0.55;
+    }
+    button:focus-visible, input:focus-visible, textarea:focus-visible {
+      outline: 3px solid rgb(51 144 236 / 0.38);
+      outline-offset: 2px;
+    }
+
+    .sidebar, .chat {
+      min-width: 0;
+      min-height: 0;
+      height: 100dvh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .sidebar {
+      z-index: 2;
+      border-right: 1px solid var(--line);
+      background: var(--sidebar);
+    }
+
+    .sidebar-top {
+      flex: 0 0 auto;
+      padding: 12px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .brand-row {
+      min-height: 44px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .brand {
+      flex: 0 0 auto;
+      padding: 0 8px 0 4px;
+      color: var(--muted);
+      font-size: 0.76rem;
+      font-weight: 800;
+      letter-spacing: 0.14em;
+    }
+
+    .account-switcher {
+      min-width: 0;
+      min-height: 48px;
+      flex: 1;
+      display: grid;
+      grid-template-columns: 38px minmax(0, 1fr) 18px;
+      align-items: center;
+      gap: 10px;
+      padding: 5px 8px;
+      border: 0;
+      border-radius: 10px;
+      background: transparent;
+      color: var(--text);
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .account-switcher:hover:not(:disabled) { background: var(--surface); }
+    .account-switcher svg { color: var(--muted); }
+
+    .account-copy, .account-row-copy, .chat-heading, .sender-copy { min-width: 0; }
+    .account-name, .account-meta, .chat-title, .chat-subtitle, .sender-name {
+      display: block;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .account-name { font-size: 0.93rem; font-weight: 680; }
+    .account-meta { margin-top: 1px; color: var(--muted); font-size: 0.76rem; }
+
+    .icon-button, .back, .dialog-close {
+      width: 44px;
+      height: 44px;
+      flex: 0 0 auto;
+      display: inline-grid;
+      place-items: center;
+      padding: 0;
+      border: 0;
+      border-radius: 50%;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+    }
+    .icon-button:hover:not(:disabled),
+    .back:hover:not(:disabled),
+    .dialog-close:hover:not(:disabled) {
+      background: var(--surface-hover);
+      color: var(--text);
+    }
+
+    .connection-row {
+      min-height: 24px;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      padding: 3px 8px 0 50px;
+      color: var(--muted);
+      font-size: 0.74rem;
+    }
+    .connection-dot {
+      width: 7px;
+      height: 7px;
+      flex: 0 0 auto;
+      border-radius: 50%;
+      background: var(--faint);
+    }
+    .connection-row[data-state="online"] .connection-dot { background: var(--success); }
+    .connection-row[data-state="connecting"] .connection-dot { background: var(--warning); }
+    .connection-row[data-state="error"] .connection-dot,
+    .connection-row[data-state="offline"] .connection-dot { background: var(--danger); }
+
+    #chats {
+      min-height: 0;
+      flex: 1;
+      overflow: auto;
+      overscroll-behavior: contain;
+      scrollbar-color: var(--line-strong) transparent;
+    }
+
+    .chat-item {
+      width: 100%;
+      min-height: 68px;
+      display: block;
+      padding: 11px 18px;
+      border: 0;
+      border-bottom: 1px solid rgb(42 57 71 / 0.74);
+      background: transparent;
+      color: var(--text);
+      text-align: left;
+      cursor: pointer;
+    }
+    .chat-item:hover { background: var(--surface-hover); }
+    .chat-item.active { background: var(--surface-active); }
+    .chat-item-title, .chat-item-preview {
+      display: block;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .chat-item-title { font-size: 0.94rem; font-weight: 660; }
+    .chat-item-preview { margin-top: 5px; color: var(--muted); font-size: 0.82rem; }
+
+    .chat { position: relative; background: var(--page); }
+    .chat::before {
+      position: absolute;
+      inset: 0;
+      z-index: 0;
+      background-image: radial-gradient(circle at center, rgb(255 255 255 / 0.025) 0 1px, transparent 1px);
+      background-size: 22px 22px;
+      content: "";
+      pointer-events: none;
+    }
+    .chat-top, #messages, .composer-wrap { position: relative; z-index: 1; }
+
+    .chat-top {
+      min-height: 72px;
+      display: flex;
+      flex: 0 0 auto;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--line);
+      background: var(--sidebar);
+    }
+    .back { display: none; }
+    .chat-heading { flex: 1; }
+    .chat-title { font-size: 0.98rem; font-weight: 680; }
+    .chat-subtitle { margin-top: 2px; color: var(--muted); font-size: 0.76rem; }
+
+    .sender-account {
+      max-width: min(250px, 36vw);
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      padding-left: 14px;
+      border-left: 1px solid var(--line);
+    }
+    .sender-label { display: block; color: var(--muted); font-size: 0.68rem; }
+    .sender-name { max-width: 170px; font-size: 0.8rem; font-weight: 650; }
+
+    .avatar {
+      position: relative;
+      flex: 0 0 auto;
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+      border-radius: 50%;
+      background: #30475d;
+      color: #dbe9f6;
+      font-size: 0.78rem;
+      font-weight: 760;
+      text-transform: uppercase;
+    }
+    .avatar.small { width: 34px; height: 34px; }
+    .avatar.medium { width: 42px; height: 42px; font-size: 0.88rem; }
+    .avatar.large { width: 52px; height: 52px; font-size: 1rem; }
+    .avatar img {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    #messages {
+      min-height: 0;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+      overflow: auto;
+      padding: 18px clamp(14px, 4vw, 54px);
+      overscroll-behavior: contain;
+      scrollbar-color: var(--line-strong) transparent;
+    }
+    .bubble {
+      max-width: min(680px, 82%);
+      padding: 9px 12px;
+      border-radius: 13px;
+      box-shadow: 0 1px 1px rgb(0 0 0 / 0.16);
+      line-height: 1.38;
+      overflow-wrap: anywhere;
+      white-space: pre-wrap;
+    }
+    .bubble.in {
+      align-self: flex-start;
+      border-bottom-left-radius: 4px;
+      background: var(--incoming);
+    }
+    .bubble.out {
+      align-self: flex-end;
+      border-bottom-right-radius: 4px;
+      background: var(--outgoing);
+    }
+
+    .empty {
+      max-width: 360px;
+      margin: auto;
+      padding: 28px;
+      color: var(--muted);
+      text-align: center;
+    }
+    .empty-title { color: var(--text); font-size: 0.95rem; font-weight: 650; }
+    .empty-detail { margin-top: 6px; font-size: 0.82rem; }
+
+    .composer-wrap {
+      flex: 0 0 auto;
+      border-top: 1px solid var(--line);
+      background: var(--sidebar);
+    }
+    .composer {
+      display: flex;
+      align-items: flex-end;
+      gap: 9px;
+      padding: 10px clamp(12px, 3vw, 28px) max(10px, env(safe-area-inset-bottom));
+    }
+    #text {
+      min-height: 44px;
+      max-height: 132px;
+      flex: 1;
+      resize: none;
+      overflow-y: auto;
+      padding: 11px 13px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--field);
+      color: var(--text);
+      line-height: 1.35;
+    }
+    #text::placeholder { color: var(--faint); }
+    #text:focus { border-color: var(--accent); outline: none; }
+    #send {
+      width: 44px;
+      height: 44px;
+      flex: 0 0 auto;
+      display: grid;
+      place-items: center;
+      padding: 0;
+      border: 0;
+      border-radius: 50%;
+      background: var(--accent);
+      color: white;
+      cursor: pointer;
+    }
+    #send:hover:not(:disabled) { background: var(--accent-hover); }
+    #send svg { transform: translateX(1px); }
+    .composer-error {
+      margin: -4px 72px 7px 28px;
+      color: var(--danger);
+      font-size: 0.76rem;
+    }
+
+    dialog {
+      width: min(460px, calc(100vw - 28px));
+      max-height: min(760px, calc(100dvh - 28px));
+      overflow: hidden;
+      padding: 0;
+      border: 1px solid var(--line-strong);
+      border-radius: 16px;
+      background: var(--sidebar);
+      color: var(--text);
+      box-shadow: var(--shadow);
+    }
+    dialog::backdrop { background: rgb(4 9 14 / 0.76); }
+    .dialog-shell {
+      max-height: min(760px, calc(100dvh - 28px));
+      display: flex;
+      flex-direction: column;
+    }
+    .dialog-head {
+      min-height: 62px;
+      display: flex;
+      flex: 0 0 auto;
+      align-items: center;
+      gap: 10px;
+      padding: 9px 10px 9px 18px;
+      border-bottom: 1px solid var(--line);
+    }
+    .dialog-head-copy { min-width: 0; flex: 1; }
+    .dialog-title { margin: 0; font-size: 1rem; font-weight: 700; }
+    .dialog-subtitle { margin: 2px 0 0; color: var(--muted); font-size: 0.76rem; }
+    .dialog-body {
+      min-height: 0;
+      overflow: auto;
+      padding: 18px;
+      scrollbar-color: var(--line-strong) transparent;
+    }
+    .dialog-footer {
+      flex: 0 0 auto;
+      padding: 13px 18px 18px;
+      border-top: 1px solid var(--line);
+    }
+
+    .account-list { display: grid; gap: 6px; }
+    .account-row {
+      min-height: 68px;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 8px;
+      border-radius: 11px;
+    }
+    .account-row:hover { background: var(--surface); }
+    .account-row-main {
+      min-width: 0;
+      min-height: 68px;
+      display: grid;
+      grid-template-columns: 42px minmax(0, 1fr);
+      align-items: center;
+      gap: 11px;
+      padding: 8px 10px;
+      border: 0;
+      border-radius: 11px;
+      background: transparent;
+      color: var(--text);
+      text-align: left;
+    }
+    button.account-row-main { cursor: pointer; }
+    button.account-row-main:hover { background: var(--surface-hover); }
+    .account-row-name {
+      display: block;
+      overflow: hidden;
+      font-size: 0.91rem;
+      font-weight: 660;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .account-row-meta {
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      margin-top: 3px;
+      color: var(--muted);
+      font-size: 0.74rem;
+    }
+    .account-row-meta > span:first-child {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .status-badge {
+      flex: 0 0 auto;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      white-space: nowrap;
+    }
+    .status-badge::before {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--faint);
+      content: "";
+    }
+    .status-badge.ready::before { background: var(--success); }
+    .status-badge.busy::before { background: var(--warning); }
+    .status-badge.error::before { background: var(--danger); }
+
+    .row-action, .primary-button, .secondary-button {
+      min-height: 44px;
+      border-radius: 10px;
+      font-weight: 650;
+      cursor: pointer;
+    }
+    .row-action {
+      margin-right: 8px;
+      padding: 0 12px;
+      border: 1px solid var(--line-strong);
+      background: transparent;
+      color: var(--accent-hover);
+      font-size: 0.78rem;
+    }
+    .row-action:hover:not(:disabled), .secondary-button:hover:not(:disabled) {
+      background: var(--surface-hover);
+    }
+    .primary-button, .secondary-button { width: 100%; padding: 0 16px; }
+    .primary-button { border: 0; background: var(--accent); color: white; }
+    .primary-button:hover:not(:disabled) { background: var(--accent-hover); }
+    .secondary-button {
+      border: 1px solid var(--line-strong);
+      background: transparent;
+      color: var(--text);
+    }
+
+    .field { display: grid; gap: 7px; margin-bottom: 14px; }
+    .field-label { color: var(--muted); font-size: 0.78rem; font-weight: 620; }
+    .field input {
+      width: 100%;
+      min-height: 46px;
+      padding: 10px 12px;
+      border: 1px solid var(--line-strong);
+      border-radius: 10px;
+      background: var(--field);
+      color: var(--text);
+    }
+    .field input:focus { border-color: var(--accent); outline: none; }
+    .form-error { margin: 0 0 13px; color: var(--danger); font-size: 0.8rem; }
+
+    .admin-dialog { width: min(420px, calc(100vw - 28px)); }
+    .admin-content { padding: 26px; }
+    .admin-mark {
+      width: 50px;
+      height: 50px;
+      display: grid;
+      place-items: center;
+      margin-bottom: 20px;
+      border-radius: 14px;
+      background: var(--accent);
+      color: white;
+      font-size: 0.84rem;
+      font-weight: 850;
+      letter-spacing: 0.1em;
+    }
+    .admin-content h1 { margin: 0; font-size: 1.35rem; line-height: 1.2; }
+    .admin-intro { margin: 9px 0 22px; color: var(--muted); font-size: 0.88rem; }
+    .security-note {
+      display: flex;
+      gap: 8px;
+      margin: 14px 0 0;
+      color: var(--muted);
+      font-size: 0.76rem;
+    }
+    .security-note svg { flex: 0 0 auto; margin-top: 1px; color: var(--success); }
+
+    .login-identity {
+      display: grid;
+      grid-template-columns: 52px minmax(0, 1fr);
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 22px;
+    }
+    .login-account-name, .login-account-meta {
+      display: block;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .login-account-name { font-size: 1rem; font-weight: 700; }
+    .login-account-meta { margin-top: 3px; color: var(--muted); font-size: 0.78rem; }
+    .login-stage h3 { margin: 0; font-size: 1.05rem; }
+    .login-stage > p { margin: 7px 0 18px; color: var(--muted); font-size: 0.84rem; }
+    .sync-state { padding: 14px 0 6px; text-align: center; }
+    .spinner {
+      width: 30px;
+      height: 30px;
+      margin: 0 auto 15px;
+      border: 3px solid var(--line-strong);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    @media (max-width: 760px) {
       body { grid-template-columns: 1fr; }
       body.chat-open .sidebar { display: none; }
       body:not(.chat-open) .chat { display: none; }
+      .back { display: inline-grid; }
+      .chat-top { min-height: 64px; padding: 8px 10px; }
+      .sender-account { max-width: 118px; padding-left: 9px; }
+      .sender-label { display: none; }
+      .sender-name { max-width: 72px; font-size: 0.72rem; }
+      .sender-account .avatar { width: 30px; height: 30px; }
+      #messages { padding: 14px 10px; }
+      .bubble { max-width: 88%; }
+      .composer { padding-inline: 9px; }
+      .composer-error { margin-inline: 12px; }
+      dialog {
+        width: calc(100vw - 16px);
+        max-height: calc(100dvh - 16px);
+        border-radius: 14px;
+      }
+      .dialog-shell { max-height: calc(100dvh - 16px); }
     }
-    .sidebar, .chat {
-      display: flex;
-      flex-direction: column;
-      min-height: 0;
-      height: 100%;
+
+    @media (max-width: 390px) {
+      .brand { display: none; }
+      .connection-row { padding-left: 50px; }
+      .sender-copy { display: none; }
+      .sender-account { max-width: none; }
     }
-    .sidebar { border-right: 1px solid var(--line); background: var(--panel); }
-    header {
-      padding: 14px 16px;
-      border-bottom: 1px solid var(--line);
-      font-weight: 650;
-      letter-spacing: 0.02em;
-    }
-    #chats {
-      overflow: auto;
-      flex: 1;
-    }
-    .chat-item {
-      padding: 12px 16px;
-      border-bottom: 1px solid var(--line);
-      cursor: pointer;
-    }
-    .chat-item:hover, .chat-item.active { background: #223040; }
-    .chat-item .title { font-weight: 600; }
-    .chat-item .preview {
-      color: var(--muted);
-      font-size: 0.85rem;
-      margin-top: 4px;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    .chat-top {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 12px 16px;
-      border-bottom: 1px solid var(--line);
-      background: var(--panel);
-    }
-    .back {
-      display: none;
-      background: transparent;
-      border: 1px solid var(--line);
-      color: var(--text);
-      border-radius: 8px;
-      padding: 6px 10px;
-      cursor: pointer;
-    }
-    @media (max-width: 720px) { .back { display: inline-block; } }
-    #messages {
-      flex: 1;
-      overflow: auto;
-      padding: 16px;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-    }
-    .bubble {
-      max-width: min(720px, 85%);
-      padding: 10px 12px;
-      border-radius: 12px;
-      white-space: pre-wrap;
-      word-break: break-word;
-      line-height: 1.35;
-    }
-    .bubble.in { align-self: flex-start; background: var(--in); }
-    .bubble.out { align-self: flex-end; background: var(--out); }
-    .composer {
-      display: flex;
-      gap: 8px;
-      padding: 12px;
-      border-top: 1px solid var(--line);
-      background: var(--panel);
-    }
-    #text {
-      flex: 1;
-      resize: none;
-      min-height: 44px;
-      max-height: 120px;
-      padding: 10px 12px;
-      border-radius: 10px;
-      border: 1px solid var(--line);
-      background: var(--bg);
-      color: var(--text);
-      font: inherit;
-    }
-    #send {
-      border: 0;
-      border-radius: 10px;
-      padding: 0 16px;
-      background: var(--accent);
-      color: white;
-      font-weight: 600;
-      cursor: pointer;
-    }
-    .empty {
-      margin: auto;
-      color: var(--muted);
-      text-align: center;
-      padding: 24px;
-    }
-    .status {
-      font-size: 0.75rem;
-      color: var(--muted);
-      font-weight: 400;
-      margin-left: auto;
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        scroll-behavior: auto !important;
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+      }
     }
   </style>
 </head>
 <body>
-  <aside class="sidebar">
-    <header>
-      LNL
-      <span class="status" id="status">…</span>
+  <aside class="sidebar" aria-label="Диалоги Telegram">
+    <header class="sidebar-top">
+      <div class="brand-row">
+        <span class="brand" aria-hidden="true">LNL</span>
+        <button class="account-switcher" id="accountButton" type="button" aria-haspopup="dialog" disabled>
+          <span class="avatar small" id="sidebarAvatar" aria-hidden="true"><span>—</span></span>
+          <span class="account-copy">
+            <span class="account-name" id="sidebarAccountName">Выберите аккаунт</span>
+            <span class="account-meta" id="sidebarAccountMeta">Вход не выполнен</span>
+          </span>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="m7 10 5 5 5-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </button>
+        <button class="icon-button" id="addAccountButton" type="button" aria-label="Добавить аккаунт" disabled>
+          <svg width="21" height="21" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+        </button>
+      </div>
+      <div class="connection-row" id="connectionState" data-state="idle">
+        <span class="connection-dot" aria-hidden="true"></span>
+        <span id="connectionStatus" role="status" aria-live="polite">Ожидание входа</span>
+      </div>
     </header>
-    <div id="chats"></div>
+    <div id="chats" role="navigation" aria-label="Список диалогов"></div>
   </aside>
+
   <main class="chat">
     <div class="chat-top">
-      <button class="back" id="back" type="button">←</button>
-      <div id="chatTitle">Выбери чат</div>
+      <button class="back" id="back" type="button" aria-label="Вернуться к диалогам">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="m15 18-6-6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
+      <div class="chat-heading">
+        <strong class="chat-title" id="chatTitle">Выберите диалог</strong>
+        <span class="chat-subtitle" id="chatSubtitle">Сообщения появятся здесь</span>
+      </div>
+      <div class="sender-account" id="senderAccount" hidden>
+        <span class="avatar small" id="chatAccountAvatar" aria-hidden="true"><span>—</span></span>
+        <span class="sender-copy">
+          <span class="sender-label">Отправка от</span>
+          <strong class="sender-name" id="chatAccountName"></strong>
+        </span>
+      </div>
     </div>
-    <div id="messages"><div class="empty">Нет открытого диалога</div></div>
-    <form class="composer" id="form">
-      <textarea id="text" placeholder="Сообщение…" rows="1"></textarea>
-      <button id="send" type="submit">→</button>
-    </form>
+
+    <div id="messages" role="log" aria-label="Сообщения" aria-live="polite"></div>
+    <div class="composer-wrap">
+      <form class="composer" id="form">
+        <textarea id="text" placeholder="Сообщение" aria-label="Текст сообщения" maxlength="4096" rows="1" disabled></textarea>
+        <button id="send" type="submit" aria-label="Отправить сообщение" disabled>
+          <svg width="21" height="21" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="m4 4 16 8-16 8 3-8-3-8Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+            <path d="M7 12h13" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+          </svg>
+        </button>
+      </form>
+      <p class="composer-error" id="composerError" role="status" aria-live="polite" hidden></p>
+    </div>
   </main>
+
+  <dialog class="admin-dialog" id="adminDialog" aria-labelledby="adminTitle">
+    <form class="admin-content" id="adminForm">
+      <div class="admin-mark" aria-hidden="true">LNL</div>
+      <h1 id="adminTitle">Подключение к LNL</h1>
+      <p class="admin-intro">Введите ключ управления, чтобы открыть аккаунты и войти в Telegram.</p>
+      <label class="field">
+        <span class="field-label">Ключ управления</span>
+        <input id="adminToken" type="password" autocomplete="off" autocapitalize="none" spellcheck="false" required />
+      </label>
+      <p class="form-error" id="adminError" role="alert" hidden></p>
+      <button class="primary-button" id="adminSubmit" type="submit">Открыть LNL</button>
+      <p class="security-note">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M12 3 5 6v5c0 4.5 2.8 8.2 7 10 4.2-1.8 7-5.5 7-10V6l-7-3Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+        </svg>
+        <span>Ключ хранится только в памяти этой вкладки.</span>
+      </p>
+    </form>
+  </dialog>
+
+  <dialog id="accountsDialog" aria-labelledby="accountsTitle">
+    <div class="dialog-shell">
+      <div class="dialog-head">
+        <div class="dialog-head-copy">
+          <h2 class="dialog-title" id="accountsTitle">Аккаунты</h2>
+          <p class="dialog-subtitle">Выберите, от чьего имени работать</p>
+        </div>
+        <button class="dialog-close" id="accountsClose" type="button" aria-label="Закрыть">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="m6 6 12 12M18 6 6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+        </button>
+      </div>
+      <div class="dialog-body">
+        <div class="account-list" id="accountsList"></div>
+      </div>
+      <div class="dialog-footer">
+        <button class="secondary-button" id="loginAnotherButton" type="button">Войти в другой аккаунт</button>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="loginDialog" aria-labelledby="loginDialogTitle">
+    <div class="dialog-shell">
+      <div class="dialog-head">
+        <div class="dialog-head-copy">
+          <h2 class="dialog-title" id="loginDialogTitle">Вход в Telegram</h2>
+          <p class="dialog-subtitle">Сессия сохранится на сервере LNL</p>
+        </div>
+        <button class="dialog-close" id="loginClose" type="button" aria-label="Закрыть">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="m6 6 12 12M18 6 6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+        </button>
+      </div>
+
+      <div class="dialog-body">
+        <div class="login-identity">
+          <span class="avatar large" id="loginAvatar" aria-hidden="true"><span>—</span></span>
+          <span>
+            <strong class="login-account-name" id="loginAccountName">Новый аккаунт</strong>
+            <span class="login-account-meta" id="loginAccountMeta">Без активной авторизации</span>
+          </span>
+        </div>
+
+        <section class="login-stage" id="phoneStage">
+          <h3>Номер телефона</h3>
+          <p>Укажите номер в международном формате. Telegram пришлёт код подтверждения.</p>
+          <form id="phoneForm">
+            <label class="field">
+              <span class="field-label">Телефон</span>
+              <input id="phoneInput" type="tel" inputmode="tel" autocomplete="tel" placeholder="+7 999 123-45-67" required />
+            </label>
+            <p class="form-error" id="phoneError" role="alert" hidden></p>
+            <button class="primary-button" id="phoneSubmit" type="submit">Получить код</button>
+          </form>
+        </section>
+
+        <section class="login-stage" id="codeStage" hidden>
+          <h3>Код подтверждения</h3>
+          <p>Введите код из сообщения Telegram. Код остаётся только в этой вкладке.</p>
+          <form id="codeForm">
+            <label class="field">
+              <span class="field-label">Код</span>
+              <input id="codeInput" type="text" inputmode="numeric" autocomplete="one-time-code" autocapitalize="none" spellcheck="false" required />
+            </label>
+            <p class="form-error" id="codeError" role="alert" hidden></p>
+            <button class="primary-button" id="codeSubmit" type="submit">Продолжить</button>
+          </form>
+        </section>
+
+        <section class="login-stage" id="passwordStage" hidden>
+          <h3>Облачный пароль</h3>
+          <p id="passwordCopy">На аккаунте включена двухэтапная аутентификация.</p>
+          <form id="passwordForm">
+            <label class="field">
+              <span class="field-label">Пароль Telegram</span>
+              <input id="passwordInput" type="password" autocomplete="current-password" required />
+            </label>
+            <p class="form-error" id="passwordError" role="alert" hidden></p>
+            <button class="primary-button" id="passwordSubmit" type="submit">Войти</button>
+          </form>
+        </section>
+
+        <section class="login-stage sync-state" id="syncStage" hidden>
+          <div class="spinner" aria-hidden="true"></div>
+          <h3>Подключаем аккаунт</h3>
+          <p id="syncCopy">Проверяем сессию и загружаем диалоги…</p>
+          <p class="form-error" id="syncError" role="alert" hidden></p>
+        </section>
+      </div>
+    </div>
+  </dialog>
+
   <script>
+    "use strict";
+
+    let adminToken = "";
+    let accounts = [];
+    let currentAccount = null;
+    let currentSession = null;
     let currentPeer = null;
+    let sessionGeneration = 0;
     let chatGeneration = 0;
+    let loadingChatGeneration = null;
     let pendingMessages = [];
-    const chatsEl = document.getElementById("chats");
-    const messagesEl = document.getElementById("messages");
-    const titleEl = document.getElementById("chatTitle");
-    const statusEl = document.getElementById("status");
-    const textEl = document.getElementById("text");
-    const form = document.getElementById("form");
-    const back = document.getElementById("back");
+    let socket = null;
+    let reconnectTimer = null;
+    let accountRequestController = null;
+    let chatRequestController = null;
+    let messageRequestController = null;
+    let authRequestController = null;
+    let accountRevision = 0;
+    let authAccountId = null;
+    let authFlowId = null;
+    let authPollTimer = null;
+    let authBusy = false;
+    let avatarRevision = 0;
+    let avatarController = new AbortController();
+    const avatarUrls = new Map();
+    const avatarPromises = new Map();
 
-    async function api(path, opts) {
-      const res = await fetch(path, {
-        headers: { "Content-Type": "application/json", ...(opts?.headers || {}) },
-        ...opts,
+    const byId = (id) => document.getElementById(id);
+    const accountButton = byId("accountButton");
+    const addAccountButton = byId("addAccountButton");
+    const sidebarAvatar = byId("sidebarAvatar");
+    const sidebarAccountName = byId("sidebarAccountName");
+    const sidebarAccountMeta = byId("sidebarAccountMeta");
+    const connectionState = byId("connectionState");
+    const connectionStatus = byId("connectionStatus");
+    const chatsEl = byId("chats");
+    const messagesEl = byId("messages");
+    const titleEl = byId("chatTitle");
+    const subtitleEl = byId("chatSubtitle");
+    const senderAccount = byId("senderAccount");
+    const chatAccountAvatar = byId("chatAccountAvatar");
+    const chatAccountName = byId("chatAccountName");
+    const textEl = byId("text");
+    const sendButton = byId("send");
+    const composerError = byId("composerError");
+    const form = byId("form");
+    const back = byId("back");
+    const adminDialog = byId("adminDialog");
+    const adminForm = byId("adminForm");
+    const adminTokenInput = byId("adminToken");
+    const adminError = byId("adminError");
+    const adminSubmit = byId("adminSubmit");
+    const accountsDialog = byId("accountsDialog");
+    const accountsList = byId("accountsList");
+    const accountsClose = byId("accountsClose");
+    const loginAnotherButton = byId("loginAnotherButton");
+    const loginDialog = byId("loginDialog");
+    const loginClose = byId("loginClose");
+    const loginAvatar = byId("loginAvatar");
+    const loginAccountName = byId("loginAccountName");
+    const loginAccountMeta = byId("loginAccountMeta");
+    const phoneStage = byId("phoneStage");
+    const codeStage = byId("codeStage");
+    const passwordStage = byId("passwordStage");
+    const syncStage = byId("syncStage");
+    const phoneForm = byId("phoneForm");
+    const codeForm = byId("codeForm");
+    const passwordForm = byId("passwordForm");
+    const phoneInput = byId("phoneInput");
+    const codeInput = byId("codeInput");
+    const passwordInput = byId("passwordInput");
+    const phoneError = byId("phoneError");
+    const codeError = byId("codeError");
+    const passwordError = byId("passwordError");
+    const syncError = byId("syncError");
+    const syncCopy = byId("syncCopy");
+    const passwordCopy = byId("passwordCopy");
+    const phoneSubmit = byId("phoneSubmit");
+    const codeSubmit = byId("codeSubmit");
+    const passwordSubmit = byId("passwordSubmit");
+
+    function abortRequest(controller) {
+      if (controller) controller.abort();
+    }
+
+    function isAbort(error) {
+      return error instanceof DOMException && error.name === "AbortError";
+    }
+
+    async function requestJson(path, options = {}) {
+      const headers = { Accept: "application/json", ...(options.headers || {}) };
+      if (options.body !== undefined) headers["Content-Type"] = "application/json";
+      if (options.token) headers.Authorization = `Bearer ${options.token}`;
+      const response = await fetch(path, {
+        method: options.method || "GET",
+        headers,
+        body: options.body === undefined ? undefined : JSON.stringify(options.body),
+        signal: options.signal,
       });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || res.statusText);
-      return data;
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        const error = new Error(
+          payload && typeof payload.error === "string"
+            ? payload.error
+            : `Сервер ответил ${response.status}`
+        );
+        error.status = response.status;
+        throw error;
+      }
+      return payload;
     }
 
-    function renderBubble(m) {
-      const div = document.createElement("div");
-      div.className = "bubble " + (m.outgoing ? "out" : "in");
-      div.textContent = m.text;
-      div.dataset.id = m.id;
-      return div;
+    function api(path, options = {}) {
+      return requestJson(path, options);
     }
 
-    async function loadChats() {
-      const chats = await api("/api/chats");
-      chatsEl.innerHTML = "";
-      for (const c of chats) {
-        const item = document.createElement("div");
-        item.className = "chat-item" + (currentPeer === c.peer_id ? " active" : "");
-        item.innerHTML =
-          `<div class="title">${escapeHtml(c.title)}</div>` +
-          `<div class="preview">${escapeHtml(c.last_message || "")}</div>`;
-        item.onclick = () => openChat(c.peer_id, c.title);
-        chatsEl.appendChild(item);
+    function adminApi(path, options = {}) {
+      return requestJson(path, { ...options, token: adminToken });
+    }
+
+    function sessionApi(sessionId, path) {
+      return `/api/sessions/${encodeURIComponent(sessionId)}${path}`;
+    }
+
+    function authApi(accountId, step, body, signal) {
+      return adminApi(
+        `/api/admin/accounts/${encodeURIComponent(accountId)}/auth/${step}`,
+        { method: "POST", body, signal }
+      );
+    }
+
+    function showDialog(dialog) {
+      if (!dialog.open) dialog.showModal();
+    }
+
+    function hideDialog(dialog) {
+      if (dialog.open) dialog.close();
+    }
+
+    function setFormError(element, message) {
+      element.textContent = message || "";
+      element.hidden = !message;
+    }
+
+    function showEmpty(container, title, detail = "") {
+      const empty = document.createElement("div");
+      empty.className = "empty";
+      const heading = document.createElement("div");
+      heading.className = "empty-title";
+      heading.textContent = title;
+      empty.appendChild(heading);
+      if (detail) {
+        const copy = document.createElement("div");
+        copy.className = "empty-detail";
+        copy.textContent = detail;
+        empty.appendChild(copy);
+      }
+      container.replaceChildren(empty);
+    }
+
+    function setConnection(state, label) {
+      connectionState.dataset.state = state;
+      connectionStatus.textContent = label;
+    }
+
+    function normalizeStatus(status) {
+      return String(status || "login_required").trim().toLowerCase().replaceAll("-", "_");
+    }
+
+    function statusInfo(account) {
+      const status = normalizeStatus(account.status);
+      if (["ready", "online", "connected", "authorized"].includes(status)) {
+        return { kind: "ready", label: "Готов" };
+      }
+      if (["login_required", "unauthorized", "signed_out"].includes(status)) {
+        return { kind: "idle", label: "Нужен вход" };
+      }
+      if (
+        ["connecting", "syncing", "authorizing", "code_required", "password_required"].includes(status)
+      ) {
+        return { kind: "busy", label: "Подключается" };
+      }
+      if (["error", "failed", "unavailable"].includes(status)) {
+        return { kind: "error", label: "Ошибка" };
+      }
+      return { kind: "busy", label: status.replaceAll("_", " ") };
+    }
+
+    function isReady(account) {
+      return statusInfo(account).kind === "ready";
+    }
+
+    function canLogin(account) {
+      return ["login_required", "unauthorized", "signed_out", "error", "failed"].includes(
+        normalizeStatus(account.status)
+      );
+    }
+
+    function displayName(account) {
+      const username = String(account.username || "").replace(/^@/, "");
+      return String(account.display_name || (username ? `@${username}` : account.id));
+    }
+
+    function accountMeta(account) {
+      const username = String(account.username || "").replace(/^@/, "");
+      const bits = [];
+      if (username) bits.push(`@${username}`);
+      if (account.phone_hint) bits.push(String(account.phone_hint));
+      if (!bits.length) bits.push(String(account.id));
+      return bits.join(" · ");
+    }
+
+    function accountInitial(account) {
+      const source = displayName(account).replace(/^@/, "").trim();
+      return Array.from(source || "?")[0].toUpperCase();
+    }
+
+    function clearAvatarCache() {
+      avatarRevision++;
+      avatarController.abort();
+      avatarController = new AbortController();
+      for (const objectUrl of avatarUrls.values()) URL.revokeObjectURL(objectUrl);
+      avatarUrls.clear();
+      avatarPromises.clear();
+    }
+
+    async function avatarObjectUrl(account, revision) {
+      if (!account.avatar_url) return null;
+      let url;
+      try {
+        url = new URL(String(account.avatar_url), location.href);
+      } catch (_) {
+        return null;
+      }
+      if (url.origin !== location.origin) return null;
+
+      const key = `${account.id}:${url.href}`;
+      if (avatarUrls.has(key)) return avatarUrls.get(key);
+      if (!avatarPromises.has(key)) {
+        const pending = fetch(url, {
+          headers: { Authorization: `Bearer ${adminToken}` },
+          signal: avatarController.signal,
+          credentials: "same-origin",
+        }).then(async (response) => {
+          if (!response.ok) throw new Error("Аватар недоступен");
+          const contentType = (response.headers.get("Content-Type") || "")
+            .split(";", 1)[0]
+            .trim()
+            .toLowerCase();
+          if (!["image/jpeg", "image/png", "image/webp"].includes(contentType)) {
+            throw new Error("Некорректный формат аватара");
+          }
+          const blob = await response.blob();
+          if (revision !== avatarRevision) return null;
+          const objectUrl = URL.createObjectURL(blob);
+          avatarUrls.set(key, objectUrl);
+          return objectUrl;
+        });
+        avatarPromises.set(key, pending);
+      }
+      try {
+        return await avatarPromises.get(key);
+      } finally {
+        avatarPromises.delete(key);
       }
     }
 
-    async function openChat(peerId, title) {
+    function renderAvatar(container, account) {
+      container.replaceChildren();
+      const fallback = document.createElement("span");
+      fallback.textContent = account ? accountInitial(account) : "—";
+      container.appendChild(fallback);
+      if (!account || !account.avatar_url || !adminToken) return;
+
+      const revision = avatarRevision;
+      const accountId = String(account.id);
+      container.dataset.accountId = accountId;
+      avatarObjectUrl(account, revision)
+        .then((objectUrl) => {
+          if (
+            !objectUrl ||
+            revision !== avatarRevision ||
+            container.dataset.accountId !== accountId ||
+            !container.isConnected
+          ) {
+            return;
+          }
+          const image = document.createElement("img");
+          image.alt = "";
+          image.src = objectUrl;
+          container.appendChild(image);
+        })
+        .catch((error) => {
+          if (!isAbort(error)) console.debug("Avatar unavailable");
+        });
+    }
+
+    function renderAccountChrome(account) {
+      currentAccount = account || null;
+      accountButton.disabled = !adminToken;
+      addAccountButton.disabled = !adminToken;
+      if (!account) {
+        sidebarAccountName.textContent = "Выберите аккаунт";
+        sidebarAccountMeta.textContent = "Вход не выполнен";
+        chatAccountName.textContent = "";
+        senderAccount.hidden = true;
+        renderAvatar(sidebarAvatar, null);
+        renderAvatar(chatAccountAvatar, null);
+        return;
+      }
+
+      const name = displayName(account);
+      sidebarAccountName.textContent = name;
+      sidebarAccountMeta.textContent = accountMeta(account);
+      accountButton.title = `Аккаунт: ${name}`;
+      chatAccountName.textContent = name;
+      senderAccount.hidden = false;
+      senderAccount.setAttribute("aria-label", `Отправка от ${name}`);
+      renderAvatar(sidebarAvatar, account);
+      renderAvatar(chatAccountAvatar, account);
+    }
+
+    function renderAccountList() {
+      const fragment = document.createDocumentFragment();
+      const readyExists = accounts.some(isReady);
+      const loginable = accounts.filter(canLogin);
+      accountsClose.disabled = !readyExists;
+      loginAnotherButton.disabled = loginable.length === 0;
+
+      if (!accounts.length) {
+        const empty = document.createElement("div");
+        empty.className = "empty";
+        const title = document.createElement("div");
+        title.className = "empty-title";
+        title.textContent = "Аккаунты не настроены";
+        const detail = document.createElement("div");
+        detail.className = "empty-detail";
+        detail.textContent = "Добавьте слот аккаунта в конфигурации LNL.";
+        empty.append(title, detail);
+        fragment.appendChild(empty);
+      }
+
+      for (const account of accounts) {
+        const info = statusInfo(account);
+        const row = document.createElement("div");
+        row.className = "account-row";
+
+        const main = document.createElement(isReady(account) ? "button" : "div");
+        main.className = "account-row-main";
+        if (main instanceof HTMLButtonElement) {
+          main.type = "button";
+          main.addEventListener("click", () => selectAccount(account));
+        }
+
+        const avatar = document.createElement("span");
+        avatar.className = "avatar medium";
+        avatar.setAttribute("aria-hidden", "true");
+        renderAvatar(avatar, account);
+        const copy = document.createElement("span");
+        copy.className = "account-row-copy";
+        const name = document.createElement("span");
+        name.className = "account-row-name";
+        name.textContent = displayName(account);
+        const meta = document.createElement("span");
+        meta.className = "account-row-meta";
+        const identity = document.createElement("span");
+        identity.textContent = accountMeta(account);
+        const badge = document.createElement("span");
+        badge.className = `status-badge ${info.kind}`;
+        badge.textContent = info.label;
+        meta.append(identity, badge);
+        copy.append(name, meta);
+        main.append(avatar, copy);
+        row.appendChild(main);
+
+        const action = document.createElement("button");
+        action.className = "row-action";
+        action.type = "button";
+        if (canLogin(account)) {
+          action.textContent = "Войти";
+          action.addEventListener("click", () => startLogin(account));
+        } else if (!isReady(account)) {
+          action.textContent = "Обновить";
+          action.addEventListener("click", () => {
+            refreshAccounts({ preferId: account.id, revealChooser: true }).catch(reportAdminError);
+          });
+        } else {
+          action.hidden = true;
+        }
+        row.appendChild(action);
+        fragment.appendChild(row);
+      }
+      accountsList.replaceChildren(fragment);
+    }
+
+    function showAccounts() {
+      renderAccountList();
+      showDialog(accountsDialog);
+    }
+
+    function sanitizeAccounts(payload) {
+      if (!Array.isArray(payload)) {
+        throw new Error("Сервер вернул неверный список аккаунтов");
+      }
+      return payload.filter(
+        (account) =>
+          account &&
+          typeof account === "object" &&
+          typeof account.id === "string" &&
+          account.id.length > 0
+      );
+    }
+
+    function applyAccounts(nextAccounts, options = {}) {
+      accounts = sanitizeAccounts(nextAccounts);
+      clearAvatarCache();
+      renderAccountList();
+      const preferredId = String(options.preferId || currentSession || "");
+      const selected =
+        accounts.find((account) => account.id === preferredId && isReady(account)) ||
+        accounts.find((account) => account.is_default && isReady(account)) ||
+        accounts.find(isReady) ||
+        null;
+
+      if (selected) {
+        renderAccountChrome(selected);
+        if (selected.id !== currentSession) switchSession(selected.id);
+      } else {
+        deactivateSession();
+        renderAccountChrome(null);
+      }
+      if (options.revealChooser && (!selected || options.alwaysReveal)) showAccounts();
+      return accounts;
+    }
+
+    function fetchAccounts(token, signal) {
+      return requestJson("/api/admin/accounts", { token, signal });
+    }
+
+    async function refreshAccounts(options = {}) {
+      abortRequest(accountRequestController);
+      const controller = new AbortController();
+      accountRequestController = controller;
+      const revision = ++accountRevision;
+      try {
+        const payload = await fetchAccounts(adminToken, controller.signal);
+        if (revision !== accountRevision || controller.signal.aborted) return accounts;
+        return applyAccounts(payload, options);
+      } catch (error) {
+        if (isAbort(error)) return accounts;
+        if (error.status === 401 || error.status === 403) {
+          requireAdmin("Ключ больше не действует. Введите его снова.");
+        }
+        throw error;
+      }
+    }
+
+    function reportAdminError(error) {
+      if (!isAbort(error)) setConnection("error", error.message || "Ошибка обновления");
+    }
+
+    function requireAdmin(message = "") {
+      adminToken = "";
+      adminTokenInput.value = "";
+      setFormError(adminError, message);
+      abortRequest(accountRequestController);
+      abortRequest(authRequestController);
+      clearTimeout(authPollTimer);
+      hideDialog(accountsDialog);
+      hideDialog(loginDialog);
+      showDialog(adminDialog);
+      requestAnimationFrame(() => adminTokenInput.focus());
+    }
+
+    function deactivateSession() {
+      sessionGeneration++;
+      chatGeneration++;
+      loadingChatGeneration = null;
+      pendingMessages = [];
+      currentSession = null;
+      currentPeer = null;
+      abortRequest(chatRequestController);
+      abortRequest(messageRequestController);
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+      if (socket) {
+        socket.onclose = null;
+        socket.close();
+        socket = null;
+      }
+      document.body.classList.remove("chat-open");
+      titleEl.textContent = "Выберите диалог";
+      subtitleEl.textContent = "Сначала войдите в аккаунт";
+      setComposerEnabled(false);
+      showEmpty(chatsEl, "Нет активного аккаунта", "Откройте список аккаунтов и выполните вход.");
+      showEmpty(messagesEl, "Диалог не выбран");
+      setConnection("idle", "Аккаунт не выбран");
+    }
+
+    function selectAccount(account) {
+      if (!isReady(account)) {
+        if (canLogin(account)) startLogin(account);
+        return;
+      }
+      hideDialog(accountsDialog);
+      renderAccountChrome(account);
+      if (currentSession !== account.id) switchSession(account.id);
+    }
+
+    function renderBubble(message) {
+      const bubble = document.createElement("div");
+      bubble.className = `bubble ${message.outgoing ? "out" : "in"}`;
+      bubble.textContent = String(message.text || "");
+      if (message.id !== undefined && message.id !== null) {
+        bubble.dataset.id = String(message.id);
+      }
+      return bubble;
+    }
+
+    async function loadChats(sessionId = currentSession, generation = sessionGeneration) {
+      if (!sessionId) return;
+      abortRequest(chatRequestController);
+      const controller = new AbortController();
+      chatRequestController = controller;
+      chatsEl.setAttribute("aria-busy", "true");
+      try {
+        const chats = await api(sessionApi(sessionId, "/chats"), { signal: controller.signal });
+        if (
+          currentSession !== sessionId ||
+          sessionGeneration !== generation ||
+          controller.signal.aborted
+        ) {
+          return;
+        }
+        if (!Array.isArray(chats)) {
+          throw new Error("Сервер вернул неверный список диалогов");
+        }
+
+        const fragment = document.createDocumentFragment();
+        for (const chat of chats) {
+          const item = document.createElement("button");
+          item.className = `chat-item${currentPeer === chat.peer_id ? " active" : ""}`;
+          item.type = "button";
+          const title = document.createElement("span");
+          title.className = "chat-item-title";
+          title.textContent = String(chat.title || chat.peer_id);
+          const preview = document.createElement("span");
+          preview.className = "chat-item-preview";
+          preview.textContent = String(chat.last_message || "Нет сообщений");
+          item.append(title, preview);
+          item.addEventListener("click", () => {
+            openChat(sessionId, chat.peer_id, chat.title).catch(console.error);
+          });
+          fragment.appendChild(item);
+        }
+        if (fragment.childNodes.length) {
+          chatsEl.replaceChildren(fragment);
+        } else {
+          showEmpty(chatsEl, "Диалогов пока нет", "Telegram вернул пустой список.");
+        }
+      } finally {
+        if (
+          currentSession === sessionId &&
+          sessionGeneration === generation &&
+          chatRequestController === controller
+        ) {
+          chatsEl.setAttribute("aria-busy", "false");
+        }
+      }
+    }
+
+    async function openChat(sessionId, peerId, title) {
+      if (sessionId !== currentSession) return;
+      abortRequest(messageRequestController);
+      const controller = new AbortController();
+      messageRequestController = controller;
+      const sessionVersion = sessionGeneration;
       const generation = ++chatGeneration;
+      loadingChatGeneration = generation;
       pendingMessages = [];
       currentPeer = peerId;
       document.body.classList.add("chat-open");
       titleEl.textContent = title || String(peerId);
-      const msgs = await api(`/api/messages/${peerId}`);
-      if (currentPeer !== peerId || generation !== chatGeneration) return;
-      messagesEl.innerHTML = "";
-      if (!msgs.length) {
-        messagesEl.innerHTML = `<div class="empty">Пока пусто</div>`;
+      subtitleEl.textContent = "Загрузка сообщений…";
+      setComposerEnabled(false);
+      showEmpty(messagesEl, "Загрузка…");
+
+      let messages;
+      try {
+        messages = await api(
+          sessionApi(sessionId, `/messages/${encodeURIComponent(String(peerId))}`),
+          { signal: controller.signal }
+        );
+      } catch (error) {
+        if (isAbort(error)) return;
+        if (
+          currentSession !== sessionId ||
+          sessionGeneration !== sessionVersion ||
+          currentPeer !== peerId ||
+          generation !== chatGeneration
+        ) {
+          return;
+        }
+        loadingChatGeneration = null;
+        pendingMessages = [];
+        currentPeer = null;
+        subtitleEl.textContent = "Не удалось открыть диалог";
+        showEmpty(messagesEl, "Ошибка загрузки", error.message);
+        loadChats(sessionId, sessionVersion).catch(console.error);
+        return;
+      }
+
+      if (
+        currentSession !== sessionId ||
+        sessionGeneration !== sessionVersion ||
+        currentPeer !== peerId ||
+        generation !== chatGeneration ||
+        controller.signal.aborted
+      ) {
+        return;
+      }
+      if (!Array.isArray(messages)) {
+        loadingChatGeneration = null;
+        showEmpty(messagesEl, "Ошибка загрузки", "Сервер вернул неверный список сообщений.");
+        return;
+      }
+
+      const fragment = document.createDocumentFragment();
+      for (const message of messages) fragment.appendChild(renderBubble(message));
+      if (fragment.childNodes.length) {
+        messagesEl.replaceChildren(fragment);
       } else {
-        for (const m of msgs) messagesEl.appendChild(renderBubble(m));
+        showEmpty(messagesEl, "Пока пусто", "Напишите первое сообщение.");
       }
       for (const message of pendingMessages) appendMessage(message);
       pendingMessages = [];
+      loadingChatGeneration = null;
+      subtitleEl.textContent = currentAccount ? `Аккаунт: ${displayName(currentAccount)}` : "";
+      setComposerEnabled(true);
       messagesEl.scrollTop = messagesEl.scrollHeight;
-      await loadChats();
+      await loadChats(sessionId, sessionVersion);
     }
 
     function appendMessage(message) {
-      if ([...messagesEl.children].some((el) => el.dataset.id == message.id)) return;
+      const id = message.id === undefined || message.id === null ? null : String(message.id);
+      if (
+        id !== null &&
+        [...messagesEl.children].some((element) => element.dataset.id === id)
+      ) {
+        return;
+      }
+      const empty = messagesEl.querySelector(".empty");
+      if (empty) empty.remove();
       messagesEl.appendChild(renderBubble(message));
     }
 
-    function appendLive(peerId, message) {
+    function appendLive(sessionId, peerId, message) {
+      if (currentSession !== sessionId) return;
       if (currentPeer === peerId) {
-        pendingMessages.push(message);
-        const empty = messagesEl.querySelector(".empty");
-        if (empty) empty.remove();
-        appendMessage(message);
-        messagesEl.scrollTop = messagesEl.scrollHeight;
+        if (loadingChatGeneration === chatGeneration) {
+          pendingMessages.push(message);
+        } else {
+          appendMessage(message);
+          messagesEl.scrollTop = messagesEl.scrollHeight;
+        }
       }
-      loadChats().catch(console.error);
+      loadChats(sessionId, sessionGeneration).catch(console.error);
     }
 
-    form.addEventListener("submit", async (e) => {
-      e.preventDefault();
-      if (currentPeer == null) return;
+    function setComposerEnabled(enabled) {
+      textEl.disabled = !enabled;
+      sendButton.disabled = !enabled;
+      if (!enabled) {
+        textEl.value = "";
+        textEl.style.height = "";
+      }
+      setFormError(composerError, "");
+    }
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (
+        currentSession == null ||
+        currentPeer == null ||
+        loadingChatGeneration === chatGeneration
+      ) {
+        return;
+      }
+      const sessionId = currentSession;
+      const peerId = currentPeer;
+      const generation = sessionGeneration;
       const text = textEl.value;
       if (!text.trim()) return;
+
       textEl.value = "";
+      textEl.style.height = "";
+      sendButton.disabled = true;
+      setFormError(composerError, "");
       try {
-        const res = await api(`/api/messages/${currentPeer}`, {
-          method: "POST",
-          body: JSON.stringify({ text }),
-        });
-        appendLive(currentPeer, res.message);
-      } catch (err) {
-        alert(err.message);
+        const response = await api(
+          sessionApi(sessionId, `/messages/${encodeURIComponent(String(peerId))}`),
+          { method: "POST", body: { text } }
+        );
+        if (currentSession === sessionId && sessionGeneration === generation) {
+          appendLive(sessionId, peerId, response.message);
+        }
+      } catch (error) {
+        if (currentSession === sessionId && sessionGeneration === generation) {
+          textEl.value = text;
+          setFormError(composerError, error.message);
+        }
+      } finally {
+        if (
+          currentSession === sessionId &&
+          sessionGeneration === generation &&
+          currentPeer === peerId
+        ) {
+          sendButton.disabled = false;
+        }
       }
     });
 
-    back.onclick = () => {
+    textEl.addEventListener("input", () => {
+      textEl.style.height = "auto";
+      textEl.style.height = `${Math.min(textEl.scrollHeight, 132)}px`;
+      setFormError(composerError, "");
+    });
+
+    textEl.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
+        event.preventDefault();
+        form.requestSubmit();
+      }
+    });
+
+    back.addEventListener("click", () => {
+      abortRequest(messageRequestController);
       chatGeneration++;
+      loadingChatGeneration = null;
       pendingMessages = [];
       document.body.classList.remove("chat-open");
       currentPeer = null;
-      titleEl.textContent = "Выбери чат";
-      messagesEl.innerHTML = `<div class="empty">Нет открытого диалога</div>`;
-      loadChats().catch(console.error);
-    };
+      titleEl.textContent = "Выберите диалог";
+      subtitleEl.textContent = currentAccount
+        ? `Аккаунт: ${displayName(currentAccount)}`
+        : "Сообщения появятся здесь";
+      showEmpty(messagesEl, "Диалог не выбран");
+      setComposerEnabled(false);
+      if (currentSession != null) loadChats(currentSession, sessionGeneration).catch(console.error);
+    });
 
-    function connectWs() {
-      const proto = location.protocol === "https:" ? "wss" : "ws";
-      const ws = new WebSocket(`${proto}://${location.host}/ws`);
-      ws.onopen = () => { statusEl.textContent = "online"; };
-      ws.onclose = () => {
-        statusEl.textContent = "offline";
-        setTimeout(connectWs, 1500);
+    function switchSession(sessionId) {
+      if (!sessionId) return;
+      if (sessionId === currentSession) {
+        loadChats(sessionId, sessionGeneration).catch(console.error);
+        return;
+      }
+
+      const generation = ++sessionGeneration;
+      chatGeneration++;
+      loadingChatGeneration = null;
+      pendingMessages = [];
+      currentSession = sessionId;
+      currentPeer = null;
+      document.body.classList.remove("chat-open");
+      titleEl.textContent = "Выберите диалог";
+      subtitleEl.textContent = currentAccount
+        ? `Аккаунт: ${displayName(currentAccount)}`
+        : "Сообщения появятся здесь";
+      showEmpty(messagesEl, "Диалог не выбран");
+      showEmpty(chatsEl, "Загрузка диалогов…");
+      setComposerEnabled(false);
+      setConnection("connecting", "Подключение…");
+
+      abortRequest(chatRequestController);
+      abortRequest(messageRequestController);
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+      if (socket) {
+        socket.onclose = null;
+        socket.close();
+        socket = null;
+      }
+
+      connectWs(sessionId, generation);
+      loadChats(sessionId, generation).catch((error) => {
+        if (isAbort(error)) return;
+        if (currentSession !== sessionId || sessionGeneration !== generation) return;
+        setConnection("error", "Ошибка загрузки");
+        showEmpty(chatsEl, "Не удалось загрузить диалоги", error.message);
+      });
+    }
+
+    function connectWs(sessionId, generation) {
+      if (currentSession !== sessionId || sessionGeneration !== generation) return;
+      const protocol = location.protocol === "https:" ? "wss" : "ws";
+      const ws = new WebSocket(
+        `${protocol}://${location.host}${sessionApi(sessionId, "/ws")}`
+      );
+      socket = ws;
+      ws.onopen = () => {
+        if (
+          socket === ws &&
+          currentSession === sessionId &&
+          sessionGeneration === generation
+        ) {
+          setConnection("online", "На связи");
+        }
       };
-      ws.onmessage = (ev) => {
+      ws.onclose = () => {
+        if (
+          socket !== ws ||
+          currentSession !== sessionId ||
+          sessionGeneration !== generation
+        ) {
+          return;
+        }
+        socket = null;
+        setConnection("offline", "Переподключение…");
+        reconnectTimer = setTimeout(() => connectWs(sessionId, generation), 1500);
+      };
+      ws.onmessage = (event) => {
+        if (
+          socket !== ws ||
+          currentSession !== sessionId ||
+          sessionGeneration !== generation
+        ) {
+          return;
+        }
         try {
-          const data = JSON.parse(ev.data);
-          if (data.type === "new_message") {
-            appendLive(data.peer_id, data.message);
+          const payload = JSON.parse(event.data);
+          if (payload.type === "new_message") {
+            appendLive(sessionId, payload.peer_id, payload.message);
           }
         } catch (_) {}
       };
     }
 
-    function escapeHtml(s) {
-      return String(s)
-        .replaceAll("&", "&amp;")
-        .replaceAll("<", "&lt;")
-        .replaceAll(">", "&gt;")
-        .replaceAll('"', "&quot;");
+    function setLoginStage(stage) {
+      phoneStage.hidden = stage !== "phone";
+      codeStage.hidden = stage !== "code";
+      passwordStage.hidden = stage !== "password";
+      syncStage.hidden = stage !== "sync";
+      if (stage === "phone") requestAnimationFrame(() => phoneInput.focus());
+      if (stage === "code") requestAnimationFrame(() => codeInput.focus());
+      if (stage === "password") requestAnimationFrame(() => passwordInput.focus());
     }
 
-    loadChats().catch((e) => {
-      statusEl.textContent = "error";
-      chatsEl.innerHTML = `<div class="empty">${escapeHtml(e.message)}</div>`;
+    function setLoginBusy(button, busy) {
+      authBusy = busy;
+      button.disabled = busy;
+      loginClose.disabled = busy;
+    }
+
+    function stopAuthWork() {
+      abortRequest(authRequestController);
+      authRequestController = null;
+      clearTimeout(authPollTimer);
+      authPollTimer = null;
+    }
+
+    function closeLogin() {
+      if (authBusy) return;
+      stopAuthWork();
+      authFlowId = null;
+      authAccountId = null;
+      phoneInput.value = "";
+      codeInput.value = "";
+      passwordInput.value = "";
+      hideDialog(loginDialog);
+      if (!accounts.some(isReady)) showAccounts();
+    }
+
+    function startLogin(account) {
+      stopAuthWork();
+      authAccountId = account.id;
+      authFlowId = null;
+      phoneInput.value = "";
+      codeInput.value = "";
+      passwordInput.value = "";
+      setFormError(phoneError, "");
+      setFormError(codeError, "");
+      setFormError(passwordError, "");
+      setFormError(syncError, "");
+      loginAccountName.textContent = displayName(account);
+      loginAccountMeta.textContent = account.phone_hint || "Авторизация ещё не выполнена";
+      renderAvatar(loginAvatar, account);
+      hideDialog(accountsDialog);
+      setLoginStage("phone");
+      showDialog(loginDialog);
+    }
+
+    function statusNeedsCode(status) {
+      return ["code_required", "code_sent", "awaiting_code"].includes(status);
+    }
+
+    function statusNeedsPassword(status) {
+      return ["password_required", "awaiting_password", "two_factor_required"].includes(status);
+    }
+
+    function statusIsReady(status) {
+      return ["ready", "online", "connected", "authorized"].includes(status);
+    }
+
+    async function handleAuthResponse(response, fallbackStage) {
+      if (!response || typeof response !== "object") {
+        throw new Error("Сервер вернул неверный ответ авторизации");
+      }
+      if (response.flow_id) authFlowId = String(response.flow_id);
+      const status = normalizeStatus(response.status);
+      if (statusNeedsPassword(status)) {
+        passwordCopy.textContent = response.password_hint
+          ? `Подсказка: ${response.password_hint}`
+          : "На аккаунте включена двухэтапная аутентификация.";
+        setLoginStage("password");
+        return;
+      }
+      if (statusNeedsCode(status)) {
+        if (!authFlowId) throw new Error("Сервер не вернул идентификатор входа");
+        setLoginStage("code");
+        return;
+      }
+      if (
+        statusIsReady(status) ||
+        ["syncing", "connecting", "authorizing"].includes(status)
+      ) {
+        await finishLogin();
+        return;
+      }
+      if (fallbackStage === "code" && authFlowId) {
+        setLoginStage("code");
+        return;
+      }
+      throw new Error(`Неожиданный статус авторизации: ${status}`);
+    }
+
+    async function finishLogin() {
+      const accountId = authAccountId;
+      if (!accountId) return;
+      setLoginStage("sync");
+      syncCopy.textContent = "Проверяем сессию и загружаем диалоги…";
+      setFormError(syncError, "");
+      phoneInput.value = "";
+      codeInput.value = "";
+      passwordInput.value = "";
+      try {
+        await refreshAccounts({ preferId: accountId, revealChooser: false });
+        const account = accounts.find((item) => item.id === accountId);
+        if (account && isReady(account)) {
+          hideDialog(loginDialog);
+          authAccountId = null;
+          authFlowId = null;
+          selectAccount(account);
+          return;
+        }
+        pollAuthorizedAccount(accountId, 0);
+      } catch (error) {
+        if (!isAbort(error)) setFormError(syncError, error.message);
+      }
+    }
+
+    function pollAuthorizedAccount(accountId, attempt) {
+      clearTimeout(authPollTimer);
+      if (!loginDialog.open || authAccountId !== accountId) return;
+      if (attempt >= 10) {
+        syncCopy.textContent = "Аккаунт ещё подключается.";
+        setFormError(
+          syncError,
+          "Закройте окно и обновите список аккаунтов через несколько секунд."
+        );
+        return;
+      }
+      authPollTimer = setTimeout(async () => {
+        if (!loginDialog.open || authAccountId !== accountId) return;
+        try {
+          await refreshAccounts({ preferId: accountId, revealChooser: false });
+          const account = accounts.find((item) => item.id === accountId);
+          if (account && isReady(account)) {
+            hideDialog(loginDialog);
+            authAccountId = null;
+            authFlowId = null;
+            selectAccount(account);
+            return;
+          }
+          if (account && canLogin(account)) {
+            setLoginStage("phone");
+            setFormError(phoneError, "Авторизация не завершилась. Попробуйте ещё раз.");
+            return;
+          }
+          pollAuthorizedAccount(accountId, attempt + 1);
+        } catch (error) {
+          if (!isAbort(error)) setFormError(syncError, error.message);
+        }
+      }, 1200);
+    }
+
+    adminDialog.addEventListener("cancel", (event) => event.preventDefault());
+
+    adminForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const candidate = adminTokenInput.value.trim();
+      if (!candidate) return;
+      setFormError(adminError, "");
+      adminSubmit.disabled = true;
+      abortRequest(accountRequestController);
+      const controller = new AbortController();
+      accountRequestController = controller;
+      const revision = ++accountRevision;
+      try {
+        const payload = await fetchAccounts(candidate, controller.signal);
+        if (controller.signal.aborted || revision !== accountRevision) return;
+        adminToken = candidate;
+        adminTokenInput.value = "";
+        hideDialog(adminDialog);
+        applyAccounts(payload, { revealChooser: true });
+      } catch (error) {
+        if (isAbort(error)) return;
+        setFormError(
+          adminError,
+          error.status === 401 || error.status === 403
+            ? "Ключ не подошёл. Проверьте значение и повторите."
+            : error.message
+        );
+        adminTokenInput.select();
+      } finally {
+        if (accountRequestController === controller) adminSubmit.disabled = false;
+      }
     });
-    connectWs();
+
+    accountButton.addEventListener("click", showAccounts);
+    addAccountButton.addEventListener("click", showAccounts);
+    accountsClose.addEventListener("click", () => hideDialog(accountsDialog));
+    accountsDialog.addEventListener("cancel", (event) => {
+      if (!accounts.some(isReady)) event.preventDefault();
+    });
+    loginAnotherButton.addEventListener("click", () => {
+      const available = accounts.filter(canLogin);
+      if (available.length === 1) {
+        startLogin(available[0]);
+      } else if (available.length > 1) {
+        const firstAction = accountsList.querySelector(".row-action:not([hidden])");
+        if (firstAction) firstAction.focus();
+      }
+    });
+
+    loginClose.addEventListener("click", closeLogin);
+    loginDialog.addEventListener("cancel", (event) => {
+      event.preventDefault();
+      if (authBusy) return;
+      closeLogin();
+    });
+
+    phoneForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (!authAccountId) return;
+      const phone = phoneInput.value.trim();
+      if (!phone) return;
+      setFormError(phoneError, "");
+      abortRequest(authRequestController);
+      const controller = new AbortController();
+      authRequestController = controller;
+      setLoginBusy(phoneSubmit, true);
+      try {
+        const response = await authApi(
+          authAccountId,
+          "phone",
+          { phone },
+          controller.signal
+        );
+        phoneInput.value = "";
+        await handleAuthResponse(response, "code");
+      } catch (error) {
+        if (!isAbort(error)) setFormError(phoneError, error.message);
+      } finally {
+        if (authRequestController === controller) setLoginBusy(phoneSubmit, false);
+      }
+    });
+
+    codeForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (!authAccountId || !authFlowId) return;
+      const code = codeInput.value.trim();
+      if (!code) return;
+      setFormError(codeError, "");
+      abortRequest(authRequestController);
+      const controller = new AbortController();
+      authRequestController = controller;
+      setLoginBusy(codeSubmit, true);
+      try {
+        const response = await authApi(
+          authAccountId,
+          "code",
+          { flow_id: authFlowId, code },
+          controller.signal
+        );
+        await handleAuthResponse(response, null);
+      } catch (error) {
+        if (!isAbort(error)) setFormError(codeError, error.message);
+      } finally {
+        codeInput.value = "";
+        if (authRequestController === controller) setLoginBusy(codeSubmit, false);
+      }
+    });
+
+    passwordForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (!authAccountId || !authFlowId) return;
+      const password = passwordInput.value;
+      if (!password) return;
+      setFormError(passwordError, "");
+      abortRequest(authRequestController);
+      const controller = new AbortController();
+      authRequestController = controller;
+      setLoginBusy(passwordSubmit, true);
+      try {
+        const response = await authApi(
+          authAccountId,
+          "password",
+          { flow_id: authFlowId, password },
+          controller.signal
+        );
+        await handleAuthResponse(response, null);
+      } catch (error) {
+        if (!isAbort(error)) setFormError(passwordError, error.message);
+      } finally {
+        passwordInput.value = "";
+        if (authRequestController === controller) setLoginBusy(passwordSubmit, false);
+      }
+    });
+
+    window.addEventListener("beforeunload", () => {
+      clearTimeout(reconnectTimer);
+      clearTimeout(authPollTimer);
+      if (socket) socket.close();
+      avatarController.abort();
+      for (const objectUrl of avatarUrls.values()) URL.revokeObjectURL(objectUrl);
+    });
+
+    deactivateSession();
+    showDialog(adminDialog);
+    requestAnimationFrame(() => adminTokenInput.focus());
   </script>
 </body>
 </html>

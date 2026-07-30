@@ -14,6 +14,7 @@ pub struct Message {
 pub struct Dialogue {
     pub title: String,
     pub history: Vec<Message>,
+    pub history_loaded: bool,
 }
 
 impl Dialogue {
@@ -83,10 +84,7 @@ pub struct ChatSummary {
 #[derive(Clone, Debug, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum WsEvent {
-    NewMessage {
-        peer_id: i64,
-        message: Message,
-    },
+    NewMessage { peer_id: i64, message: Message },
 }
 
 #[cfg(test)]
@@ -107,6 +105,7 @@ mod tests {
         let mut dialogue = Dialogue {
             title: "chat".to_string(),
             history: Vec::new(),
+            history_loaded: true,
         };
 
         assert!(dialogue.insert_new_message(message(43)));

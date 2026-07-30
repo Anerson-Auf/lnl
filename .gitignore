@@ -1,6 +1,8 @@
 /target
 .env
 *.session
+*.bak
+*.tmp
 .vscode/
 
 /clients/
