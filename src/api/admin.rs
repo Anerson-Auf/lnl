@@ -204,36 +204,39 @@ async fn auth_phone(
     State(manager): State<Arc<AccountManager>>,
     Path(account_id): Path<String>,
     Json(body): Json<PhoneBody>,
-) -> Result<Json<AuthReply>, Response> {
-    manager
-        .request_phone(&account_id, &body.phone)
-        .await
-        .map(Json)
-        .map_err(account_error)
+) -> Response {
+    auth_reply(manager.request_phone(&account_id, &body.phone).await)
 }
 
 async fn auth_code(
     State(manager): State<Arc<AccountManager>>,
     Path(account_id): Path<String>,
     Json(body): Json<CodeBody>,
-) -> Result<Json<AuthReply>, Response> {
-    manager
-        .submit_code(&account_id, &body.flow_id, &body.code)
-        .await
-        .map(Json)
-        .map_err(account_error)
+) -> Response {
+    auth_reply(
+        manager
+            .submit_code(&account_id, &body.flow_id, &body.code)
+            .await,
+    )
 }
 
 async fn auth_password(
     State(manager): State<Arc<AccountManager>>,
     Path(account_id): Path<String>,
     Json(body): Json<PasswordBody>,
-) -> Result<Json<AuthReply>, Response> {
-    manager
-        .submit_password(&account_id, &body.flow_id, &body.password)
-        .await
-        .map(Json)
-        .map_err(account_error)
+) -> Response {
+    auth_reply(
+        manager
+            .submit_password(&account_id, &body.flow_id, &body.password)
+            .await,
+    )
+}
+
+fn auth_reply(result: Result<AuthReply, AccountError>) -> Response {
+    match result {
+        Ok(reply) => Json(reply).into_response(),
+        Err(error) => account_error(error),
+    }
 }
 
 fn account_error(error: AccountError) -> Response {
