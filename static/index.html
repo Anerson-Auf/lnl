@@ -47,15 +47,27 @@
       line-height: 1.4;
     }
 
-    button, input, textarea { font: inherit; }
+    button, input, textarea, select { font: inherit; }
     button { -webkit-tap-highlight-color: transparent; }
-    button:disabled, input:disabled, textarea:disabled {
+    button:disabled, input:disabled, textarea:disabled, select:disabled {
       cursor: not-allowed;
       opacity: 0.55;
     }
-    button:focus-visible, input:focus-visible, textarea:focus-visible {
+    button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible,
+    audio:focus-visible, video:focus-visible {
       outline: 3px solid rgb(51 144 236 / 0.38);
       outline-offset: 2px;
+    }
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      padding: 0;
+      border: 0;
+      margin: -1px;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
     }
 
     .sidebar, .chat {
@@ -195,6 +207,19 @@
     }
     .chat-item-title { font-size: 0.94rem; font-weight: 660; }
     .chat-item-preview { margin-top: 5px; color: var(--muted); font-size: 0.82rem; }
+    .chat-item-title-row {
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+    }
+    .chat-item-title-row .chat-item-title { min-width: 0; flex: 1; }
+    .chat-pin {
+      width: 15px;
+      height: 15px;
+      flex: 0 0 auto;
+      color: var(--accent);
+    }
 
     .chat { position: relative; background: var(--page); }
     .chat::before {
@@ -222,6 +247,10 @@
     .chat-heading { flex: 1; }
     .chat-title { font-size: 0.98rem; font-weight: 680; }
     .chat-subtitle { margin-top: 2px; color: var(--muted); font-size: 0.76rem; }
+    #pinChatButton[aria-pressed="true"] {
+      background: rgb(51 144 236 / 0.14);
+      color: var(--accent);
+    }
 
     .sender-account {
       max-width: min(250px, 36vw);
@@ -278,6 +307,112 @@
       overflow-wrap: anywhere;
       white-space: pre-wrap;
     }
+    .bubble.has-media {
+      width: fit-content;
+      max-width: min(460px, 92%);
+      padding: 8px;
+      white-space: normal;
+    }
+    .bubble.has-sticker {
+      padding: 2px;
+      background: transparent;
+      box-shadow: none;
+    }
+    .message-text {
+      padding: 2px 4px;
+      line-height: 1.38;
+      overflow-wrap: anywhere;
+      white-space: pre-wrap;
+    }
+    .message-media + .message-text { margin-top: 6px; }
+    .message-media.auto-load {
+      min-width: min(300px, 68vw);
+      min-height: min(190px, 44vw);
+    }
+    .message-media.auto-load.sticker {
+      min-width: min(180px, 48vw);
+      min-height: min(180px, 48vw);
+    }
+    .media-photo,
+    .media-sticker {
+      display: block;
+      max-width: min(420px, 70vw);
+      max-height: 360px;
+      border-radius: 9px;
+      object-fit: contain;
+    }
+    .media-sticker {
+      width: min(180px, 48vw);
+      height: min(180px, 48vw);
+      background: transparent;
+    }
+    .media-video {
+      display: block;
+      width: min(420px, 72vw);
+      max-height: 360px;
+      border-radius: 9px;
+      background: #071019;
+    }
+    .video-note {
+      width: min(220px, 58vw);
+      aspect-ratio: 1;
+      overflow: hidden;
+      border-radius: 50%;
+      background: #071019;
+    }
+    .video-note video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    .voice-player {
+      display: block;
+      width: min(320px, 70vw);
+      min-height: 44px;
+    }
+    .file-message,
+    .media-placeholder {
+      min-width: min(310px, 70vw);
+      display: grid;
+      grid-template-columns: 40px minmax(0, 1fr);
+      align-items: center;
+      gap: 10px;
+      padding: 7px;
+      border: 0;
+      border-radius: 9px;
+      background: rgb(255 255 255 / 0.065);
+      color: var(--text);
+      text-align: left;
+    }
+    button.file-message { cursor: pointer; }
+    button.file-message:hover:not(:disabled) { background: rgb(255 255 255 / 0.1); }
+    .file-icon {
+      width: 40px;
+      height: 40px;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      background: var(--accent);
+      color: white;
+      font-size: 0.68rem;
+      font-weight: 780;
+      letter-spacing: 0.03em;
+    }
+    .file-copy { min-width: 0; }
+    .file-name, .file-meta {
+      display: block;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .file-name { font-size: 0.86rem; font-weight: 650; }
+    .file-meta { margin-top: 2px; color: var(--muted); font-size: 0.72rem; }
+    .media-loading {
+      min-width: 150px;
+      padding: 12px;
+      color: var(--muted);
+      font-size: 0.78rem;
+    }
     .bubble.in {
       align-self: flex-start;
       border-bottom-left-radius: 4px;
@@ -310,6 +445,43 @@
       gap: 9px;
       padding: 10px clamp(12px, 3vw, 28px) max(10px, env(safe-area-inset-bottom));
     }
+    .attachment-draft {
+      min-height: 54px;
+      display: grid;
+      grid-template-columns: 38px minmax(0, 1fr) auto 44px;
+      align-items: center;
+      gap: 9px;
+      margin: 8px clamp(12px, 3vw, 28px) 0;
+      padding: 7px 8px;
+      border: 1px solid var(--line);
+      border-radius: 11px;
+      background: var(--surface);
+    }
+    .attachment-copy { min-width: 0; }
+    .attachment-name, .attachment-meta {
+      display: block;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .attachment-name { font-size: 0.84rem; font-weight: 650; }
+    .attachment-meta { color: var(--muted); font-size: 0.72rem; }
+    #attachmentMode {
+      min-height: 38px;
+      max-width: 180px;
+      padding: 0 30px 0 10px;
+      border: 1px solid var(--line-strong);
+      border-radius: 9px;
+      background: var(--field);
+      color: var(--text);
+    }
+    .upload-progress {
+      grid-column: 2 / 4;
+      width: 100%;
+      height: 4px;
+      accent-color: var(--accent);
+    }
+    #attachButton { margin-bottom: 0; }
     #text {
       min-height: 44px;
       max-height: 132px;
@@ -561,6 +733,16 @@
       #messages { padding: 14px 10px; }
       .bubble { max-width: 88%; }
       .composer { padding-inline: 9px; }
+      .attachment-draft {
+        grid-template-columns: 38px minmax(0, 1fr) 44px;
+        margin-inline: 9px;
+      }
+      #attachmentMode {
+        grid-column: 2 / 3;
+        width: 100%;
+        max-width: none;
+      }
+      .upload-progress { grid-column: 2 / 3; }
       .composer-error { margin-inline: 12px; }
       dialog {
         width: calc(100vw - 16px);
@@ -626,6 +808,12 @@
         <strong class="chat-title" id="chatTitle">Выберите диалог</strong>
         <span class="chat-subtitle" id="chatSubtitle">Сообщения появятся здесь</span>
       </div>
+      <button class="icon-button" id="pinChatButton" type="button" aria-pressed="false" aria-label="Закрепить в основном списке Telegram" hidden>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="m8 4 8 8m-6-6 5-2 5 5-2 5-4 1-5 5-1-5-5-5 5-4Z" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
+      <span class="sr-only" id="chatActionStatus" role="status" aria-live="polite"></span>
       <div class="sender-account" id="senderAccount" hidden>
         <span class="avatar small" id="chatAccountAvatar" aria-hidden="true"><span>—</span></span>
         <span class="sender-copy">
@@ -637,7 +825,28 @@
 
     <div id="messages" role="log" aria-label="Сообщения" aria-live="polite"></div>
     <div class="composer-wrap">
+      <div class="attachment-draft" id="attachmentDraft" hidden>
+        <span class="file-icon" id="attachmentIcon" aria-hidden="true">FILE</span>
+        <span class="attachment-copy">
+          <strong class="attachment-name" id="attachmentName"></strong>
+          <span class="attachment-meta" id="attachmentMeta"></span>
+        </span>
+        <select id="attachmentMode" aria-label="Как отправить вложение"></select>
+        <button class="icon-button" id="attachmentClear" type="button" aria-label="Убрать вложение">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="m6 6 12 12M18 6 6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+        </button>
+        <progress class="upload-progress" id="uploadProgress" max="100" hidden></progress>
+        <span class="sr-only" id="uploadStatus" role="status" aria-live="polite"></span>
+      </div>
       <form class="composer" id="form">
+        <input id="attachmentInput" type="file" hidden />
+        <button class="icon-button" id="attachButton" type="button" aria-label="Прикрепить файл" disabled>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="m9 17 7.7-7.7a3 3 0 0 0-4.2-4.2L4.8 12.8a5 5 0 0 0 7.1 7.1l7.4-7.4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+          </svg>
+        </button>
         <textarea id="text" placeholder="Сообщение" aria-label="Текст сообщения" maxlength="4096" rows="1" disabled></textarea>
         <button id="send" type="submit" aria-label="Отправить сообщение" disabled>
           <svg width="21" height="21" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -772,6 +981,7 @@
     let currentAccount = null;
     let currentSession = null;
     let currentPeer = null;
+    let currentChat = null;
     let sessionGeneration = 0;
     let chatGeneration = 0;
     let loadingChatGeneration = null;
@@ -791,6 +1001,19 @@
     let avatarController = new AbortController();
     const avatarUrls = new Map();
     const avatarPromises = new Map();
+    let composerEnabled = false;
+    let selectedAttachment = null;
+    let uploadXhr = null;
+    let pinBusy = false;
+    let mediaRevision = 0;
+    let mediaController = new AbortController();
+    const mediaUrls = new Map();
+    const mediaPromises = new Map();
+    const mediaHydrators = new WeakMap();
+    let mediaObserver = null;
+    const mediaFetchQueue = [];
+    let mediaFetchActive = 0;
+    const mediaFetchLimit = 3;
 
     const byId = (id) => document.getElementById(id);
     const accountButton = byId("accountButton");
@@ -804,11 +1027,23 @@
     const messagesEl = byId("messages");
     const titleEl = byId("chatTitle");
     const subtitleEl = byId("chatSubtitle");
+    const pinChatButton = byId("pinChatButton");
+    const chatActionStatus = byId("chatActionStatus");
     const senderAccount = byId("senderAccount");
     const chatAccountAvatar = byId("chatAccountAvatar");
     const chatAccountName = byId("chatAccountName");
     const textEl = byId("text");
     const sendButton = byId("send");
+    const attachButton = byId("attachButton");
+    const attachmentInput = byId("attachmentInput");
+    const attachmentDraft = byId("attachmentDraft");
+    const attachmentIcon = byId("attachmentIcon");
+    const attachmentName = byId("attachmentName");
+    const attachmentMeta = byId("attachmentMeta");
+    const attachmentMode = byId("attachmentMode");
+    const attachmentClear = byId("attachmentClear");
+    const uploadProgress = byId("uploadProgress");
+    const uploadStatus = byId("uploadStatus");
     const composerError = byId("composerError");
     const form = byId("form");
     const back = byId("back");
@@ -889,11 +1124,121 @@
       return `/api/sessions/${encodeURIComponent(sessionId)}${path}`;
     }
 
+    function adminSessionApi(sessionId, path) {
+      return `/api/admin/sessions/${encodeURIComponent(sessionId)}${path}`;
+    }
+
     function authApi(accountId, step, body, signal) {
       return adminApi(
         `/api/admin/accounts/${encodeURIComponent(accountId)}/auth/${step}`,
         { method: "POST", body, signal }
       );
+    }
+
+    async function protectedBlob(path, signal) {
+      const response = await fetch(path, {
+        headers: { Authorization: `Bearer ${adminToken}` },
+        signal,
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        const error = new Error(
+          payload && typeof payload.error === "string"
+            ? payload.error
+            : `Сервер ответил ${response.status}`
+        );
+        error.status = response.status;
+        throw error;
+      }
+      const type = String(response.headers.get("content-type") || "")
+        .split(";", 1)[0]
+        .trim()
+        .toLowerCase();
+      const allowed = [
+        "image/jpeg", "image/png", "image/webp",
+        "audio/ogg", "audio/webm", "audio/mpeg", "audio/mp4",
+        "video/mp4", "video/webm", "application/octet-stream",
+      ];
+      if (!allowed.includes(type)) throw new Error("Сервер вернул небезопасный тип файла");
+      return response.blob();
+    }
+
+    function pumpMediaFetchQueue() {
+      while (mediaFetchActive < mediaFetchLimit && mediaFetchQueue.length) {
+        const job = mediaFetchQueue.shift();
+        if (job.signal.aborted) {
+          job.reject(new DOMException("Загрузка отменена", "AbortError"));
+          continue;
+        }
+        mediaFetchActive++;
+        protectedBlob(job.path, job.signal)
+          .then(job.resolve, job.reject)
+          .finally(() => {
+            mediaFetchActive--;
+            pumpMediaFetchQueue();
+          });
+      }
+    }
+
+    function queuedMediaBlob(path, signal) {
+      return new Promise((resolve, reject) => {
+        mediaFetchQueue.push({ path, signal, resolve, reject });
+        pumpMediaFetchQueue();
+      });
+    }
+
+    function uploadMultipart(path, formData, onProgress) {
+      return new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        uploadXhr = xhr;
+        xhr.open("POST", path);
+        xhr.responseType = "json";
+        xhr.setRequestHeader("Accept", "application/json");
+        xhr.setRequestHeader("Authorization", `Bearer ${adminToken}`);
+        xhr.upload.addEventListener("progress", (event) => {
+          onProgress(event.lengthComputable ? event.loaded / event.total : null);
+        });
+        xhr.addEventListener("load", () => {
+          const payload = xhr.response && typeof xhr.response === "object"
+            ? xhr.response
+            : null;
+          if (xhr.status >= 200 && xhr.status < 300) {
+            resolve(payload);
+            return;
+          }
+          const error = new Error(
+            payload && typeof payload.error === "string"
+              ? payload.error
+              : `Сервер ответил ${xhr.status}`
+          );
+          error.status = xhr.status;
+          reject(error);
+        });
+        xhr.addEventListener("error", () => reject(new Error("Сеть недоступна")));
+        xhr.addEventListener("abort", () => {
+          const error = new DOMException("Загрузка отменена", "AbortError");
+          reject(error);
+        });
+        xhr.addEventListener("loadend", () => {
+          if (uploadXhr === xhr) uploadXhr = null;
+        });
+        xhr.send(formData);
+      });
+    }
+
+    function mediaPath(sessionId, peerId, messageId) {
+      return adminSessionApi(
+        sessionId,
+        `/messages/${encodeURIComponent(String(peerId))}/${encodeURIComponent(String(messageId))}/media`
+      );
+    }
+
+    function formatBytes(value) {
+      const size = Number(value);
+      if (!Number.isFinite(size) || size < 0) return "";
+      if (size < 1024) return `${size} Б`;
+      if (size < 1024 ** 2) return `${(size / 1024).toFixed(1)} КБ`;
+      return `${(size / 1024 ** 2).toFixed(1)} МБ`;
     }
 
     function showDialog(dialog) {
@@ -1227,6 +1572,8 @@
     }
 
     function requireAdmin(message = "") {
+      clearAttachmentDraft({ abort: true });
+      clearMediaCache();
       adminToken = "";
       adminTokenInput.value = "";
       setFormError(adminError, message);
@@ -1239,6 +1586,296 @@
       requestAnimationFrame(() => adminTokenInput.focus());
     }
 
+    function clearMediaCache() {
+      mediaRevision++;
+      mediaController.abort();
+      mediaController = new AbortController();
+      if (mediaObserver) mediaObserver.disconnect();
+      mediaObserver = null;
+      for (const objectUrl of mediaUrls.values()) URL.revokeObjectURL(objectUrl);
+      mediaUrls.clear();
+      mediaPromises.clear();
+    }
+
+    function mediaContext(message) {
+      return {
+        revision: mediaRevision,
+        sessionId: currentSession,
+        peerId: currentPeer,
+        messageId: message.id,
+        controller: mediaController,
+      };
+    }
+
+    function isCurrentMediaContext(context) {
+      return (
+        context.revision === mediaRevision &&
+        context.sessionId === currentSession &&
+        context.peerId === currentPeer &&
+        context.controller === mediaController &&
+        !context.controller.signal.aborted
+      );
+    }
+
+    function scheduleMediaHydration(container, context, hydrate) {
+      if (!("IntersectionObserver" in window)) {
+        if (isCurrentMediaContext(context)) hydrate();
+        return;
+      }
+      if (!mediaObserver) {
+        const observer = new IntersectionObserver((entries) => {
+          for (const entry of entries) {
+            if (!entry.isIntersecting) continue;
+            observer.unobserve(entry.target);
+            const run = mediaHydrators.get(entry.target);
+            mediaHydrators.delete(entry.target);
+            if (run && entry.target.isConnected) run();
+          }
+        }, { root: messagesEl, rootMargin: "240px 0px" });
+        mediaObserver = observer;
+      }
+      mediaHydrators.set(container, () => {
+        if (isCurrentMediaContext(context)) hydrate();
+      });
+      mediaObserver.observe(container);
+    }
+
+    async function mediaObjectUrl(context) {
+      if (
+        !context.sessionId ||
+        context.peerId == null ||
+        context.messageId == null ||
+        !isCurrentMediaContext(context)
+      ) {
+        throw new Error("Диалог уже закрыт");
+      }
+      const key = [
+        context.sessionId,
+        context.peerId,
+        context.messageId,
+      ].join(":");
+      if (mediaUrls.has(key)) return mediaUrls.get(key);
+      if (!mediaPromises.has(key)) {
+        const promise = queuedMediaBlob(
+          mediaPath(context.sessionId, context.peerId, context.messageId),
+          context.controller.signal
+        ).then((blob) => {
+          if (!isCurrentMediaContext(context)) {
+            throw new DOMException("Устарело", "AbortError");
+          }
+          const objectUrl = URL.createObjectURL(blob);
+          mediaUrls.set(key, objectUrl);
+          return objectUrl;
+        }).finally(() => mediaPromises.delete(key));
+        mediaPromises.set(key, promise);
+      }
+      return mediaPromises.get(key);
+    }
+
+    function normalizeMessageMedia(media) {
+      if (!media || typeof media !== "object") return null;
+      const kinds = ["sticker", "photo", "file", "audio", "video", "voice", "video_note"];
+      const kind = String(media.kind || "");
+      if (!kinds.includes(kind)) return null;
+      return {
+        ...media,
+        kind,
+        file_name: typeof media.file_name === "string" ? media.file_name : "",
+        mime_type: typeof media.mime_type === "string" ? media.mime_type : "",
+      };
+    }
+
+    function mediaFileButton(message, media, context, label = "Скачать") {
+      const button = document.createElement("button");
+      button.className = "file-message";
+      button.type = "button";
+      const icon = document.createElement("span");
+      icon.className = "file-icon";
+      icon.textContent = media.kind === "voice" ? "VOICE" : media.kind === "video_note" ? "VIDEO" : "FILE";
+      const copy = document.createElement("span");
+      copy.className = "file-copy";
+      const name = document.createElement("strong");
+      name.className = "file-name";
+      name.textContent = media.file_name || label;
+      name.title = name.textContent;
+      const meta = document.createElement("span");
+      meta.className = "file-meta";
+      meta.textContent = [formatBytes(media.size), media.mime_type].filter(Boolean).join(" · ") || label;
+      copy.append(name, meta);
+      button.append(icon, copy);
+      button.setAttribute("aria-label", `${label}: ${name.textContent}`);
+      button.addEventListener("click", async () => {
+        const original = meta.textContent;
+        button.disabled = true;
+        meta.textContent = "Скачивание…";
+        try {
+          const blob = await queuedMediaBlob(
+            mediaPath(context.sessionId, context.peerId, context.messageId),
+            context.controller.signal
+          );
+          if (!isCurrentMediaContext(context)) {
+            throw new DOMException("Устарело", "AbortError");
+          }
+          const url = URL.createObjectURL(blob);
+          const anchor = document.createElement("a");
+          anchor.href = url;
+          anchor.download = media.file_name || `telegram-${message.id}`;
+          document.body.appendChild(anchor);
+          anchor.click();
+          anchor.remove();
+          setTimeout(() => URL.revokeObjectURL(url), 1000);
+          meta.textContent = original;
+        } catch (error) {
+          if (error.status === 401 || error.status === 403) {
+            requireAdmin("Ключ больше не действует. Введите его снова.");
+          } else if (!isAbort(error)) {
+            meta.textContent = "Не удалось скачать — повторить";
+          }
+        } finally {
+          button.disabled = false;
+        }
+      });
+      return button;
+    }
+
+    function hydrateVisualMedia(container, message, media, context) {
+      const loading = document.createElement("div");
+      loading.className = "media-loading";
+      loading.textContent = "Загрузка вложения…";
+      container.replaceChildren(loading);
+      mediaObjectUrl(context).then((url) => {
+        if (!isCurrentMediaContext(context) || !container.isConnected) return;
+        let element;
+        if (media.kind === "photo" || (media.kind === "sticker" && media.sticker_format === "static")) {
+          element = document.createElement("img");
+          element.className = media.kind === "sticker" ? "media-sticker" : "media-photo";
+          element.alt = media.kind === "sticker"
+            ? `Стикер${media.emoji ? ` ${media.emoji}` : ""}`
+            : "Фотография";
+          element.loading = "lazy";
+          element.src = url;
+        } else if (media.kind === "voice" || media.kind === "audio") {
+          element = document.createElement("audio");
+          element.className = "voice-player";
+          element.controls = true;
+          element.preload = "metadata";
+          element.setAttribute("aria-label", media.kind === "voice" ? "Голосовое сообщение" : "Аудиофайл");
+          element.src = url;
+        } else {
+          const video = document.createElement("video");
+          video.className = media.kind === "sticker" ? "media-sticker" : "media-video";
+          video.controls = true;
+          video.playsInline = true;
+          video.preload = "metadata";
+          video.setAttribute(
+            "aria-label",
+            media.kind === "video_note" ? "Видеосообщение" : media.kind === "sticker" ? "Видеостикер" : "Видео"
+          );
+          video.src = url;
+          if (media.kind === "sticker") {
+            video.muted = true;
+            video.loop = true;
+          }
+          if (media.kind === "video_note") {
+            const round = document.createElement("div");
+            round.className = "video-note";
+            round.appendChild(video);
+            element = round;
+          } else {
+            element = video;
+          }
+        }
+        container.replaceChildren(element);
+      }).catch((error) => {
+        if (isAbort(error) || !isCurrentMediaContext(context) || !container.isConnected) return;
+        if (error.status === 401 || error.status === 403) {
+          requireAdmin("Ключ больше не действует. Введите его снова.");
+          return;
+        }
+        mediaRevealButton(container, message, media, context, "Повторить загрузку");
+      });
+    }
+
+    function mediaRevealButton(container, message, media, context, label) {
+      const button = document.createElement("button");
+      button.className = "file-message";
+      button.type = "button";
+      const icon = document.createElement("span");
+      icon.className = "file-icon";
+      icon.textContent = media.kind === "voice" ? "VOICE" : media.kind === "video_note" ? "VIDEO" : "VIEW";
+      const copy = document.createElement("span");
+      copy.className = "file-copy";
+      const name = document.createElement("strong");
+      name.className = "file-name";
+      name.textContent = label;
+      const meta = document.createElement("span");
+      meta.className = "file-meta";
+      meta.textContent = [formatBytes(media.size), media.mime_type].filter(Boolean).join(" · ");
+      copy.append(name, meta);
+      button.append(icon, copy);
+      button.addEventListener("click", () => hydrateVisualMedia(container, message, media, context), {
+        once: true,
+      });
+      container.replaceChildren(button);
+    }
+
+    function renderMessageMedia(message, media) {
+      const container = document.createElement("div");
+      const context = mediaContext(message);
+      container.className = "message-media";
+      if (media.kind === "file") {
+        container.appendChild(mediaFileButton(message, media, context));
+      } else if (media.kind === "sticker" && media.sticker_format === "animated") {
+        const placeholder = mediaFileButton(message, media, context, "Анимированный стикер");
+        const name = placeholder.querySelector(".file-name");
+        if (name) name.textContent = media.emoji || "Анимированный стикер";
+        container.appendChild(placeholder);
+      } else if (media.spoiler) {
+        mediaRevealButton(container, message, media, context, "Показать скрытое медиа");
+      } else if (["voice", "audio", "video", "video_note"].includes(media.kind)) {
+        const label =
+          media.kind === "voice" ? "Загрузить голосовое"
+            : media.kind === "audio" ? "Загрузить аудио"
+              : media.kind === "video_note" ? "Загрузить видеокружок"
+                : "Загрузить видео";
+        mediaRevealButton(container, message, media, context, label);
+      } else {
+        container.classList.add("auto-load");
+        if (media.kind === "sticker") container.classList.add("sticker");
+        scheduleMediaHydration(
+          container,
+          context,
+          () => hydrateVisualMedia(container, message, media, context)
+        );
+      }
+      return container;
+    }
+
+    function resetPinState() {
+      currentChat = null;
+      pinBusy = false;
+      pinChatButton.hidden = true;
+      pinChatButton.disabled = false;
+      pinChatButton.setAttribute("aria-pressed", "false");
+      chatActionStatus.textContent = "";
+    }
+
+    function renderPinButton() {
+      if (!currentChat) {
+        resetPinState();
+        return;
+      }
+      const pinned = currentChat.pinned === true;
+      pinChatButton.hidden = false;
+      pinChatButton.disabled = pinBusy;
+      pinChatButton.setAttribute("aria-pressed", String(pinned));
+      pinChatButton.setAttribute(
+        "aria-label",
+        pinned ? "Открепить диалог в Telegram" : "Закрепить диалог в Telegram"
+      );
+      pinChatButton.title = pinChatButton.getAttribute("aria-label");
+    }
+
     function deactivateSession() {
       sessionGeneration++;
       chatGeneration++;
@@ -1246,6 +1883,9 @@
       pendingMessages = [];
       currentSession = null;
       currentPeer = null;
+      resetPinState();
+      clearAttachmentDraft({ abort: true });
+      clearMediaCache();
       abortRequest(chatRequestController);
       abortRequest(messageRequestController);
       clearTimeout(reconnectTimer);
@@ -1277,7 +1917,19 @@
     function renderBubble(message) {
       const bubble = document.createElement("div");
       bubble.className = `bubble ${message.outgoing ? "out" : "in"}`;
-      bubble.textContent = String(message.text || "");
+      const media = normalizeMessageMedia(message.media);
+      if (media) {
+        bubble.classList.add("has-media");
+        if (media.kind === "sticker") bubble.classList.add("has-sticker");
+        bubble.appendChild(renderMessageMedia(message, media));
+      }
+      const text = String(message.text || "");
+      if (text) {
+        const textNode = document.createElement("div");
+        textNode.className = "message-text";
+        textNode.textContent = text;
+        bubble.appendChild(textNode);
+      }
       if (message.id !== undefined && message.id !== null) {
         bubble.dataset.id = String(message.id);
       }
@@ -1308,17 +1960,39 @@
           const item = document.createElement("button");
           item.className = `chat-item${currentPeer === chat.peer_id ? " active" : ""}`;
           item.type = "button";
+          const titleRow = document.createElement("span");
+          titleRow.className = "chat-item-title-row";
           const title = document.createElement("span");
           title.className = "chat-item-title";
           title.textContent = String(chat.title || chat.peer_id);
+          titleRow.appendChild(title);
+          if (chat.pinned === true) {
+            const pin = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+            pin.classList.add("chat-pin");
+            pin.setAttribute("viewBox", "0 0 24 24");
+            pin.setAttribute("fill", "none");
+            pin.setAttribute("aria-hidden", "true");
+            const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+            path.setAttribute("d", "m8 4 8 8m-6-6 5-2 5 5-2 5-4 1-5 5-1-5-5-5 5-4Z");
+            path.setAttribute("stroke", "currentColor");
+            path.setAttribute("stroke-width", "1.7");
+            path.setAttribute("stroke-linecap", "round");
+            path.setAttribute("stroke-linejoin", "round");
+            pin.appendChild(path);
+            titleRow.appendChild(pin);
+          }
           const preview = document.createElement("span");
           preview.className = "chat-item-preview";
           preview.textContent = String(chat.last_message || "Нет сообщений");
-          item.append(title, preview);
+          item.append(titleRow, preview);
           item.addEventListener("click", () => {
-            openChat(sessionId, chat.peer_id, chat.title).catch(console.error);
+            openChat(sessionId, chat).catch(console.error);
           });
           fragment.appendChild(item);
+          if (currentPeer === chat.peer_id) {
+            currentChat = { ...chat };
+            renderPinButton();
+          }
         }
         if (fragment.childNodes.length) {
           chatsEl.replaceChildren(fragment);
@@ -1336,9 +2010,13 @@
       }
     }
 
-    async function openChat(sessionId, peerId, title) {
+    async function openChat(sessionId, chat) {
       if (sessionId !== currentSession) return;
+      const peerId = chat.peer_id;
+      const title = chat.title;
       abortRequest(messageRequestController);
+      clearAttachmentDraft({ abort: true });
+      clearMediaCache();
       const controller = new AbortController();
       messageRequestController = controller;
       const sessionVersion = sessionGeneration;
@@ -1346,6 +2024,8 @@
       loadingChatGeneration = generation;
       pendingMessages = [];
       currentPeer = peerId;
+      currentChat = { ...chat };
+      renderPinButton();
       document.body.classList.add("chat-open");
       titleEl.textContent = title || String(peerId);
       subtitleEl.textContent = "Загрузка сообщений…";
@@ -1371,6 +2051,7 @@
         loadingChatGeneration = null;
         pendingMessages = [];
         currentPeer = null;
+        resetPinState();
         subtitleEl.textContent = "Не удалось открыть диалог";
         showEmpty(messagesEl, "Ошибка загрузки", error.message);
         loadChats(sessionId, sessionVersion).catch(console.error);
@@ -1434,15 +2115,183 @@
       loadChats(sessionId, sessionGeneration).catch(console.error);
     }
 
+    function attachmentModes(file) {
+      const name = file.name.toLowerCase();
+      const modes = [{ value: "file", label: "Как файл" }];
+      if (
+        ["image/jpeg", "image/png", "image/webp"].includes(file.type) ||
+        /\.(jpe?g|png|webp)$/.test(name)
+      ) {
+        modes.unshift({ value: "photo", label: "Как фото" });
+      }
+      if (file.type === "audio/ogg" || /\.ogg$/.test(name)) {
+        modes.unshift({ value: "voice", label: "Как голосовое" });
+      }
+      if (file.type === "video/mp4" || /\.mp4$/.test(name)) {
+        modes.push({ value: "video_note", label: "Как видеокружок" });
+      }
+      return modes;
+    }
+
+    async function probeAttachment(attachment) {
+      const name = attachment.file.name.toLowerCase();
+      const isOgg = attachment.file.type === "audio/ogg" || /\.ogg$/.test(name);
+      const isMp4 = attachment.file.type === "video/mp4" || /\.mp4$/.test(name);
+      if (!isOgg && !isMp4) return;
+      const objectUrl = URL.createObjectURL(attachment.file);
+      const element = document.createElement(isMp4 ? "video" : "audio");
+      attachment.probePending = true;
+      refreshComposerState();
+      try {
+        await new Promise((resolve) => {
+          const done = () => resolve();
+          element.addEventListener("loadedmetadata", done, { once: true });
+          element.addEventListener("error", done, { once: true });
+          setTimeout(done, 2500);
+          element.preload = "metadata";
+          element.src = objectUrl;
+        });
+        if (selectedAttachment !== attachment) return;
+        if (Number.isFinite(element.duration) && element.duration > 60) {
+          attachment.probeError = isMp4
+            ? "Видеокружок должен быть не длиннее 60 секунд."
+            : "Голосовое должно быть не длиннее 60 секунд.";
+        } else {
+          attachment.probeError = "";
+        }
+      } finally {
+        element.removeAttribute("src");
+        URL.revokeObjectURL(objectUrl);
+        if (selectedAttachment === attachment) {
+          attachment.probePending = false;
+          setFormError(composerError, attachmentValidationError());
+          refreshComposerState();
+        }
+      }
+    }
+
+    function renderAttachmentDraft() {
+      const attachment = selectedAttachment;
+      attachmentDraft.hidden = !attachment;
+      if (!attachment) return;
+      attachmentName.textContent = attachment.file.name || "Вложение";
+      attachmentName.title = attachmentName.textContent;
+      attachmentMeta.textContent = [
+        formatBytes(attachment.file.size),
+        attachment.file.type || "тип определит сервер",
+      ].filter(Boolean).join(" · ");
+      attachmentMode.replaceChildren();
+      for (const mode of attachment.modes) {
+        const option = document.createElement("option");
+        option.value = mode.value;
+        option.textContent = mode.label;
+        option.selected = mode.value === attachment.mode;
+        attachmentMode.appendChild(option);
+      }
+      attachmentIcon.textContent =
+        attachment.mode === "photo" ? "PHOTO"
+          : attachment.mode === "voice" ? "VOICE"
+            : attachment.mode === "video_note" ? "VIDEO"
+              : "FILE";
+      uploadProgress.hidden = !uploadXhr;
+      attachmentClear.setAttribute(
+        "aria-label",
+        uploadXhr ? "Отменить загрузку" : "Убрать вложение"
+      );
+    }
+
+    function attachmentValidationError() {
+      const attachment = selectedAttachment;
+      if (!attachment) return "";
+      if (
+        Array.from(textEl.value).length > 1024 ||
+        new TextEncoder().encode(textEl.value).length > 4096
+      ) {
+        return "Подпись к вложению должна быть не длиннее 1024 символов.";
+      }
+      if (
+        ["voice", "video_note"].includes(attachment.mode) &&
+        attachment.probePending
+      ) {
+        return "Проверяем длительность вложения…";
+      }
+      if (["voice", "video_note"].includes(attachment.mode)) {
+        return attachment.probeError || "";
+      }
+      return "";
+    }
+
+    function refreshComposerState() {
+      const uploading = uploadXhr !== null;
+      const attachmentError = attachmentValidationError();
+      textEl.disabled = !composerEnabled || uploading;
+      attachButton.disabled = !composerEnabled || uploading;
+      attachmentMode.disabled = !composerEnabled || uploading;
+      sendButton.disabled =
+        !composerEnabled ||
+        uploading ||
+        Boolean(attachmentError) ||
+        (!textEl.value.trim() && !selectedAttachment);
+    }
+
+    function clearAttachmentDraft(options = {}) {
+      if (options.abort && uploadXhr) uploadXhr.abort();
+      selectedAttachment = null;
+      attachmentInput.value = "";
+      uploadProgress.hidden = true;
+      uploadProgress.removeAttribute("value");
+      uploadStatus.textContent = "";
+      attachmentDraft.hidden = true;
+      refreshComposerState();
+    }
+
     function setComposerEnabled(enabled) {
-      textEl.disabled = !enabled;
-      sendButton.disabled = !enabled;
+      composerEnabled = enabled;
       if (!enabled) {
         textEl.value = "";
         textEl.style.height = "";
+        clearAttachmentDraft({ abort: true });
       }
+      refreshComposerState();
       setFormError(composerError, "");
     }
+
+    attachButton.addEventListener("click", () => attachmentInput.click());
+
+    attachmentInput.addEventListener("change", () => {
+      const file = attachmentInput.files && attachmentInput.files[0];
+      if (!file) return;
+      if (file.size > 50 * 1024 * 1024) {
+        attachmentInput.value = "";
+        setFormError(composerError, "Файл превышает 50 МиБ.");
+        return;
+      }
+      const modes = attachmentModes(file);
+      selectedAttachment = {
+        file,
+        modes,
+        mode: modes[0].value,
+        probePending: false,
+        probeError: "",
+      };
+      renderAttachmentDraft();
+      refreshComposerState();
+      setFormError(composerError, attachmentValidationError());
+      probeAttachment(selectedAttachment).catch(() => {});
+    });
+
+    attachmentMode.addEventListener("change", () => {
+      if (!selectedAttachment) return;
+      selectedAttachment.mode = attachmentMode.value;
+      renderAttachmentDraft();
+      refreshComposerState();
+      setFormError(composerError, attachmentValidationError());
+    });
+
+    attachmentClear.addEventListener("click", () => {
+      clearAttachmentDraft({ abort: true });
+      textEl.focus();
+    });
 
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
@@ -1456,13 +2305,77 @@
       const sessionId = currentSession;
       const peerId = currentPeer;
       const generation = sessionGeneration;
+      const chatVersion = chatGeneration;
       const text = textEl.value;
-      if (!text.trim()) return;
+      const attachment = selectedAttachment;
+      if (!text.trim() && !attachment) return;
+
+      setFormError(composerError, "");
+      if (attachment) {
+        const validationError = attachmentValidationError();
+        if (validationError) {
+          setFormError(composerError, validationError);
+          return;
+        }
+        const formData = new FormData();
+        formData.append("kind", attachment.mode);
+        formData.append("caption", text);
+        formData.append("file", attachment.file, attachment.file.name);
+        uploadProgress.hidden = false;
+        uploadProgress.removeAttribute("value");
+        uploadStatus.textContent = "Загрузка вложения…";
+        renderAttachmentDraft();
+        refreshComposerState();
+        try {
+          const transfer = uploadMultipart(
+            adminSessionApi(
+              sessionId,
+              `/messages/${encodeURIComponent(String(peerId))}/media`
+            ),
+            formData,
+            (ratio) => {
+              if (ratio == null) {
+                uploadProgress.removeAttribute("value");
+                uploadStatus.textContent = "Загрузка вложения…";
+              } else {
+                const percent = Math.round(ratio * 100);
+                uploadProgress.value = percent;
+                uploadStatus.textContent = `Загрузка: ${percent}%`;
+              }
+            }
+          );
+          renderAttachmentDraft();
+          refreshComposerState();
+          const response = await transfer;
+          if (
+            currentSession === sessionId &&
+            currentPeer === peerId &&
+            sessionGeneration === generation &&
+            chatGeneration === chatVersion
+          ) {
+            textEl.value = "";
+            textEl.style.height = "";
+            clearAttachmentDraft();
+            if (response && response.message) appendLive(sessionId, peerId, response.message);
+          }
+        } catch (error) {
+          if (error.status === 401 || error.status === 403) {
+            requireAdmin("Ключ больше не действует. Введите его снова.");
+          } else if (!isAbort(error)) {
+            setFormError(composerError, error.message);
+            uploadStatus.textContent = "Загрузка не удалась";
+          }
+        } finally {
+          uploadProgress.hidden = true;
+          refreshComposerState();
+          renderAttachmentDraft();
+        }
+        return;
+      }
 
       textEl.value = "";
       textEl.style.height = "";
-      sendButton.disabled = true;
-      setFormError(composerError, "");
+      refreshComposerState();
       try {
         const response = await api(
           sessionApi(sessionId, `/messages/${encodeURIComponent(String(peerId))}`),
@@ -1482,7 +2395,7 @@
           sessionGeneration === generation &&
           currentPeer === peerId
         ) {
-          sendButton.disabled = false;
+          refreshComposerState();
         }
       }
     });
@@ -1490,7 +2403,8 @@
     textEl.addEventListener("input", () => {
       textEl.style.height = "auto";
       textEl.style.height = `${Math.min(textEl.scrollHeight, 132)}px`;
-      setFormError(composerError, "");
+      setFormError(composerError, attachmentValidationError());
+      refreshComposerState();
     });
 
     textEl.addEventListener("keydown", (event) => {
@@ -1500,13 +2414,71 @@
       }
     });
 
+    pinChatButton.addEventListener("click", async () => {
+      if (!currentChat || !currentSession || currentPeer == null || pinBusy) return;
+      const sessionId = currentSession;
+      const peerId = currentPeer;
+      const generation = sessionGeneration;
+      const chatVersion = chatGeneration;
+      const shouldPin = currentChat.pinned !== true;
+      pinBusy = true;
+      renderPinButton();
+      chatActionStatus.textContent = shouldPin ? "Закрепляем диалог…" : "Открепляем диалог…";
+      try {
+        const response = await adminApi(
+          adminSessionApi(
+            sessionId,
+            `/chats/${encodeURIComponent(String(peerId))}/pin`
+          ),
+          { method: shouldPin ? "PUT" : "DELETE" }
+        );
+        if (
+          currentSession !== sessionId ||
+          currentPeer !== peerId ||
+          sessionGeneration !== generation ||
+          chatGeneration !== chatVersion ||
+          !currentChat
+        ) {
+          return;
+        }
+        currentChat.pinned = response && response.pinned === true;
+        chatActionStatus.textContent = currentChat.pinned
+          ? "Диалог закреплён в Telegram"
+          : "Диалог откреплён в Telegram";
+        renderPinButton();
+        await loadChats(sessionId, generation).catch((error) => {
+          if (!isAbort(error)) console.error(error);
+        });
+      } catch (error) {
+        if (error.status === 401 || error.status === 403) {
+          requireAdmin("Ключ больше не действует. Введите его снова.");
+        } else {
+          chatActionStatus.textContent = error.message || "Не удалось изменить закрепление";
+          setFormError(composerError, error.message);
+        }
+      } finally {
+        if (
+          currentSession === sessionId &&
+          currentPeer === peerId &&
+          sessionGeneration === generation &&
+          chatGeneration === chatVersion
+        ) {
+          pinBusy = false;
+          renderPinButton();
+        }
+      }
+    });
+
     back.addEventListener("click", () => {
       abortRequest(messageRequestController);
+      clearAttachmentDraft({ abort: true });
+      clearMediaCache();
       chatGeneration++;
       loadingChatGeneration = null;
       pendingMessages = [];
       document.body.classList.remove("chat-open");
       currentPeer = null;
+      resetPinState();
       titleEl.textContent = "Выберите диалог";
       subtitleEl.textContent = currentAccount
         ? `Аккаунт: ${displayName(currentAccount)}`
@@ -1529,6 +2501,9 @@
       pendingMessages = [];
       currentSession = sessionId;
       currentPeer = null;
+      resetPinState();
+      clearAttachmentDraft({ abort: true });
+      clearMediaCache();
       document.body.classList.remove("chat-open");
       titleEl.textContent = "Выберите диалог";
       subtitleEl.textContent = currentAccount
@@ -1598,6 +2573,14 @@
           const payload = JSON.parse(event.data);
           if (payload.type === "new_message") {
             appendLive(sessionId, payload.peer_id, payload.message);
+          } else if (payload.type === "chat_pinned") {
+            if (currentPeer === payload.peer_id && currentChat) {
+              currentChat.pinned = payload.pinned === true;
+              renderPinButton();
+            }
+            loadChats(sessionId, generation).catch((error) => {
+              if (!isAbort(error)) console.error(error);
+            });
           }
         } catch (_) {}
       };
@@ -1899,8 +2882,11 @@
       clearTimeout(reconnectTimer);
       clearTimeout(authPollTimer);
       if (socket) socket.close();
+      if (uploadXhr) uploadXhr.abort();
       avatarController.abort();
+      mediaController.abort();
       for (const objectUrl of avatarUrls.values()) URL.revokeObjectURL(objectUrl);
+      for (const objectUrl of mediaUrls.values()) URL.revokeObjectURL(objectUrl);
     });
 
     deactivateSession();

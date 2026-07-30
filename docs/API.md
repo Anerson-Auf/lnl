@@ -75,6 +75,27 @@
 { "error": "нет чата …" }
 ```
 
+У сообщения с Telegram-вложением появляется необязательное поле `media`.
+Текстовые сообщения сохраняют прежнюю JSON-форму. Поддерживаются
+`sticker`, `photo`, `file`, `audio`, `video`, `voice` и `video_note`:
+
+```json
+{
+  "id": 45,
+  "text": "",
+  "outgoing": false,
+  "date": 1710000003,
+  "media": {
+    "kind": "voice",
+    "mime_type": "audio/ogg",
+    "size": 18240,
+    "duration_seconds": 7,
+    "downloadable": true,
+    "spoiler": false
+  }
+}
+```
+
 ### `POST /api/messages/{peer_id}`
 
 Отправка через default-сессию. Scoped-вариант:
@@ -119,6 +140,11 @@
 ```
 
 Клиент может только читать; отправка — через REST.
+Изменение закрепа в основном списке или архиве Telegram приходит отдельным событием:
+
+```json
+{ "type": "chat_pinned", "peer_id": 123456789, "pinned": true }
+```
 
 ## Рекомендации Android
 
@@ -151,7 +177,25 @@
 - `POST /api/admin/accounts/{id}/auth/password` —
   `{ "flow_id": "…", "password": "…" }`.
 - `GET /api/admin/accounts/{id}/avatar` — безопасный raster-аватар.
+- `POST /api/admin/sessions/{id}/messages/{peer_id}/media` — одно
+  multipart-вложение до 50 МиБ: `kind=photo|file|voice|video_note`, `file`,
+  необязательная `caption`.
+- `GET /api/admin/sessions/{id}/messages/{peer_id}/{message_id}/media` —
+  защищённое потоковое скачивание; один HTTP byte range поддерживается,
+  один ответ ограничен 100 МиБ.
+- `PUT|DELETE /api/admin/sessions/{id}/chats/{peer_id}/pin` —
+  закрепить или открепить диалог в его текущем списке Telegram.
 
 `flow_id`, OTP и 2FA из одного слота не принимаются другим. OTP, пароль и
 Telegram challenge остаются только в памяти. Rich profile и аватар никогда не
 добавляются в публичный `GET /api/sessions`.
+
+Бинарные media-route доступны только на loopback admin-сервере и требуют
+Bearer. Перед скачиванием сервер повторно получает сообщение из Telegram и
+проверяет выбранные session, peer и message id. Имя файла не используется как
+путь, загрузка пишется потоково во временный файл с приватными правами.
+Фото проверяется по magic bytes. Нативная отправка голосового принимает
+OGG/Opus, видеокружка — MP4/H.264 до 60 секунд; длительность, кодек и размеры
+сервер читает из файла и не доверяет multipart-метаданным. Релей не выполняет
+транскодирование. Статические и WebM-стикеры отображаются inline;
+анимированные TGS доступны как защищённое вложение.

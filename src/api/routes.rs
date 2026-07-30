@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 use crate::config::types::{ChatKey, ChatSummary, Message};
+use crate::tg::media::media_label;
 
 use super::state::{AppState, HistoryLoader, MessageSender, SessionState};
 
@@ -50,11 +51,23 @@ fn list_chats_for<C>(session: Arc<SessionState<C>>) -> Json<Vec<ChatSummary>> {
             ChatSummary {
                 peer_id: key.bot_api_id(),
                 title: dialogue.title.clone(),
-                last_message: dialogue.history.last().map(|message| message.text.clone()),
+                last_message: dialogue.history.last().map(|message| {
+                    if message.text.trim().is_empty() {
+                        message
+                            .media
+                            .as_ref()
+                            .map(media_label)
+                            .unwrap_or("")
+                            .to_string()
+                    } else {
+                        message.text.clone()
+                    }
+                }),
+                pinned: dialogue.pinned,
             }
         })
         .collect();
-    chats.sort_by_key(|chat| chat.title.to_lowercase());
+    chats.sort_by_key(|chat| (chat.pinned != Some(true), chat.title.to_lowercase()));
     Json(chats)
 }
 
@@ -144,6 +157,7 @@ async fn send_message_for<C: MessageSender>(
         text,
         outgoing: true,
         date: sent.date,
+        media: None,
     };
     session.record_message(key, message.clone());
 

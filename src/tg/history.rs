@@ -3,7 +3,9 @@ use ferogram::Client;
 use ferogram::tl;
 use std::collections::HashSet;
 
-use crate::config::types::{ChatKey, Dialogue, Message, Telegram};
+use crate::config::types::{ChatKey, Dialogue, Telegram};
+
+use super::media::{message_from_incoming, message_from_raw};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DialogSeed {
@@ -105,7 +107,21 @@ pub async fn seed_dialogues_or_all(
         return Ok(DialogSeed::All);
     }
 
-    seed_dialogues_from_peers(client, telegram, peers, per_chat).await?;
+    let (main_pins, archive_pins) =
+        tokio::join!(client.get_pinned_dialogs(0), client.get_pinned_dialogs(1));
+    let pinned_keys = match (main_pins, archive_pins) {
+        (Ok(main), Ok(archive)) => Some(
+            main.into_iter()
+                .chain(archive)
+                .filter_map(|dialog| match dialog {
+                    tl::enums::Dialog::Dialog(dialog) => ChatKey::from_peer(&dialog.peer),
+                    _ => None,
+                })
+                .collect::<HashSet<_>>(),
+        ),
+        _ => None,
+    };
+    seed_dialogues_from_peers(client, telegram, peers, per_chat, pinned_keys.as_ref()).await?;
     Ok(DialogSeed::Folder)
 }
 
@@ -114,6 +130,7 @@ async fn seed_dialogues_from_peers(
     telegram: &Telegram,
     peers: Vec<tl::enums::InputPeer>,
     per_chat: i32,
+    pinned_keys: Option<&HashSet<ChatKey>>,
 ) -> Result<()> {
     let mut seen = HashSet::new();
     for input in peers {
@@ -131,15 +148,7 @@ async fn seed_dialogues_from_peers(
         let mut history = page
             .messages
             .into_iter()
-            .filter_map(|message| {
-                let text = message.text()?.trim();
-                (!text.is_empty()).then(|| Message {
-                    id: message.id(),
-                    text: text.to_string(),
-                    outgoing: message.outgoing(),
-                    date: message.date(),
-                })
-            })
+            .filter_map(|message| message_from_incoming(&message))
             .collect::<Vec<_>>();
         history.reverse();
 
@@ -149,6 +158,7 @@ async fn seed_dialogues_from_peers(
                 title: peer_title(client, &input, key).await,
                 history,
                 history_loaded: true,
+                pinned: pinned_keys.map(|pins| pins.contains(&key)),
             },
         );
     }
@@ -176,32 +186,21 @@ async fn seed_all_dialogues(client: &Client, telegram: &Telegram) -> Result<()> 
             .and_then(message_from_raw)
             .into_iter()
             .collect();
+        let pinned = match &dialog.raw {
+            tl::enums::Dialog::Dialog(dialog) => Some(dialog.pinned),
+            _ => None,
+        };
         telegram.dialogues.insert(
             key,
             Dialogue {
                 title: dialog.title(),
                 history,
                 history_loaded: false,
+                pinned,
             },
         );
     }
     Ok(())
-}
-
-fn message_from_raw(message: &tl::enums::Message) -> Option<Message> {
-    let tl::enums::Message::Message(message) = message else {
-        return None;
-    };
-    let text = message.message.trim();
-    if text.is_empty() {
-        return None;
-    }
-    Some(Message {
-        id: message.id,
-        text: text.to_string(),
-        outgoing: message.out,
-        date: message.date,
-    })
 }
 
 #[cfg(test)]
