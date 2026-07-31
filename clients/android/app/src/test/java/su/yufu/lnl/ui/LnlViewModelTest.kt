@@ -1,5 +1,6 @@
 package su.yufu.lnl.ui
 
+import java.io.IOException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -184,6 +185,31 @@ class LnlViewModelTest {
         )
     }
 
+    @Test
+    fun failedRelayCandidateDoesNotReplaceSavedUrl() = runTest(dispatcher) {
+        val savedUrl = "https://relay.example.test"
+        val candidateUrl = "https://new-relay.example.test"
+        val store = FakeSettingsStore(baseUrl = savedUrl)
+        val currentClient = FakeRelayClient(normalizedBaseUrl = savedUrl)
+        val failedClient = FakeRelayClient(normalizedBaseUrl = candidateUrl).apply {
+            sessionsHandler = { throw IOException("relay unavailable") }
+        }
+        val viewModel = LnlViewModel(
+            preferences = store,
+            apiFactory = { rawUrl ->
+                if (rawUrl == candidateUrl) failedClient else currentClient
+            },
+        )
+        advanceUntilIdle()
+
+        viewModel.updateBaseUrlDraft(candidateUrl)
+        viewModel.connect()
+        advanceUntilIdle()
+
+        assertEquals(savedUrl, store.savedBaseUrl)
+        assertEquals(ConnectionStatus.Offline, viewModel.state.value.connection)
+    }
+
     private fun viewModel(
         store: FakeSettingsStore,
         client: FakeRelayClient,
@@ -205,6 +231,8 @@ private class FakeSettingsStore(
     sessionId: String? = null,
 ) : RelaySettingsStore {
     private var baseUrl = baseUrl
+    val savedBaseUrl: String
+        get() = baseUrl
     var sessionId = sessionId
         private set
 
@@ -229,12 +257,13 @@ private class FakeRelayClient(
     val events = MutableSharedFlow<SocketEvent>(extraBufferCapacity = 8)
     val chatRequests = mutableListOf<String>()
     var sendRequests = 0
+    var sessionsHandler: suspend () -> List<SessionSummary> = { sessionsResult }
     var messagesHandler: suspend (String, Long) -> List<Message> = { _, _ -> emptyList() }
     var sendHandler: suspend (String, Long, String) -> SendResponse = { _, _, text ->
         SendResponse(ok = true, message = Message(1, text, true, 1))
     }
 
-    override suspend fun sessions(): List<SessionSummary> = sessionsResult
+    override suspend fun sessions(): List<SessionSummary> = sessionsHandler()
 
     override suspend fun chats(sessionId: String): List<ChatSummary> {
         chatRequests += sessionId
