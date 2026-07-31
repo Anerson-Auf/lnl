@@ -1,6 +1,7 @@
 # LNL Relay API (для Android)
 
-База: `http://<host>:8080` (или `https://…` за nginx).  
+База: `https://<host>` через TLS reverse proxy; локальный debug может
+использовать `http://<host>:8080`.
 `peer_id` — Bot API id (`i64`).
 
 ## Сессии
@@ -148,14 +149,15 @@
 
 ## Рекомендации Android
 
-1. Базовый URL в настройках (не хардкод прод-IP в release без экрана настроек).
-2. Retrofit/OkHttp + OkHttp WebSocket (или Ktor).
-3. Список чатов → экран диалога → `POST` + подписка на WS для live.
-4. На cleartext HTTP в debug: `android:usesCleartextTraffic="true"` или network security config.
-5. Сначала `GET /api/sessions`, затем хранить выбранный `session_id` и
+1. Сначала `GET /api/sessions`, затем хранить выбранный `session_id` и
    использовать scoped REST/WS; legacy URL подходят для single-account клиента.
-6. У публичного Android relay API auth пока нет — не светить его в интернет
-   без токена/VPN. При нескольких аккаунтах цена ошибочной публикации выше.
+2. Хранить базовый URL и выбранный id, но не admin token, OTP или Telegram 2FA.
+3. Release-клиент должен требовать HTTPS/WSS; cleartext допустим только в
+   локальной debug-сборке.
+4. У публичного relay API client-auth пока нет — не публиковать его в интернет
+   без TLS и VPN/другого сетевого ограничения доступа.
+5. Бинарные media и pin mutation остаются только в защищённой admin-панели;
+   публичный Android-клиент получает media metadata и `chat_pinned` events.
 
 ## Панель аккаунтов
 
