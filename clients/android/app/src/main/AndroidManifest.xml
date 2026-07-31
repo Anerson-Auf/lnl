@@ -11,7 +11,7 @@
         android:roundIcon="@drawable/ic_launcher"
         android:supportsRtl="true"
         android:usesCleartextTraffic="${usesCleartextTraffic}"
-        android:theme="@android:style/Theme.Material.Light.NoActionBar">
+        android:theme="@style/Theme.Lnl">
         <activity
             android:name=".MainActivity"
             android:exported="true"
