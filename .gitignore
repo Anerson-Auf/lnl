@@ -5,3 +5,15 @@
 *.tmp
 .vscode/
 
+# Android client
+/clients/android/.gradle/
+/clients/android/.idea/
+/clients/android/.kotlin/
+/clients/android/.cxx/
+/clients/android/.externalNativeBuild/
+/clients/android/captures/
+/clients/android/local.properties
+/clients/android/**/build/
+/clients/android/*.iml
+/clients/android/*.jks
+/clients/android/*.keystore
